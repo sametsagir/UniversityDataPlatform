@@ -1,0 +1,353 @@
+@page "/upload-dataset"
+@using UniversityDataPlatform.Models
+@using UniversityDataPlatform.Repositories.Interfaces
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@using System.Security.Claims
+@using System.IO
+@attribute [Authorize]
+@layout MainLayout 
+@inject IDatasetRepository DatasetRepository
+@inject AuthenticationStateProvider AuthStateProvider
+@inject NavigationManager NavManager
+@inject IWebHostEnvironment Environment
+@inject IFacultyRepository FacultyRepository
+
+<div class="upload-viewport-modern">
+    <div class="form-container-compact animate-slide-up">
+        
+        @* ÜST BAŞLIK: MODERN VE KURUMSAL *@
+        <div class="form-header-row text-center">
+            <h1 class="pro-form-title">Publish Dataset</h1>
+            <div class="pro-title-divider"></div>
+            <p class="pro-form-subtitle">Integrate the new academic dataset into the secure institutional <strong>@facultyName</strong> library.</p>
+        </div>
+
+        @* ANA PANEL KARTI: BEYAZ VE DERİNLİKLİ *@
+        <div class="pro-card-form">
+            
+            @* YAYINLANACAĞI AKADEMİK BİRİM *@
+            <div class="input-block mb-4">
+                <label class="pro-input-label">PUBLISHING ACADEMIC UNIT</label>
+                <div class="input-control-wrapper" style="background-color: #f1f5f9; opacity: 0.85;">
+                    <i class="bi bi-building" style="color: #64748b; font-size: 1.1rem; position: absolute; left: 16px;"></i>
+                    <input value="@facultyName" readonly class="pro-input-field fw-bold" style="color: #0f172a; cursor: not-allowed;" />
+                </div>
+            </div>
+
+            @* VERİ SETİ ADI *@
+            <div class="input-block mb-4">
+                <label class="pro-input-label">DATASET TITLE</label>
+                <div class="input-control-wrapper">
+                    <i class="bi bi-fonts"></i>
+                    <input @bind="newDataset.Title" placeholder="e.g., Faculty of Engineering 2026 Observational Data" class="pro-input-field" />
+                </div>
+            </div>
+
+            @* AÇIKLAMA *@
+            <div class="input-block mb-4">
+                <label class="pro-input-label">METADATA & DESCRIPTION</label>
+                <div class="input-control-wrapper align-items-start">
+                    <i class="bi bi-text-paragraph mt-2"></i>
+                    <textarea @bind="newDataset.Description" rows="4" placeholder="Brief description of the dataset content and properties..." class="pro-input-field"></textarea>
+                </div>
+            </div>
+
+            @* DOSYA YÜKLEME ALANI *@
+            <div class="input-block mb-5">
+                <label class="pro-input-label">ATTACH FILE (CSV / EXCEL)</label>
+                <div class="pro-drop-zone @(selectedFile != null ? "file-active" : "")">
+                    <InputFile OnChange="LoadFiles" class="hidden-file-input" id="csvInp" accept=".csv,.xlsx" />
+                    <label for="csvInp" class="drop-zone-label">
+                        @if (selectedFile == null)
+                        {
+                            <div class="drop-ui">
+                                <div class="drop-icon-box">
+                                    <i class="bi bi-cloud-arrow-up"></i>
+                                </div>
+                                <span class="drop-main-text">Drag and drop file here or click to browse</span>
+                                <span class="drop-sub-text">Maximum file size: 15MB</span>
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="drop-ui">
+                                <div class="drop-icon-box success">
+                                    <i class="bi bi-file-earmark-check"></i>
+                                </div>
+                                <span class="drop-main-text text-success">@selectedFile.Name</span>
+                                <span class="drop-sub-text">File is ready to be uploaded</span>
+                            </div>
+                        }
+                    </label>
+                </div>
+            </div>
+
+            @* AKSİYON BUTONLARI *@
+            <div class="pro-form-footer">
+                <button class="btn-pro-ghost" @onclick="Cancel">Cancel</button>
+                <button class="btn-pro-primary" @onclick="HandleSave" disabled="@(selectedFile == null || isUploading || string.IsNullOrEmpty(newDataset.Title))">
+                    @if (isUploading)
+                    {
+                        <span class="spinner-border spinner-border-sm me-2"></span> <span>PROCESSING...</span>
+                    }
+                    else
+                    {
+                        <i class="bi bi-rocket-takeoff me-2"></i> <span>PUBLISH DATA</span>
+                    }
+                </button>
+            </div>
+
+        </div>
+    </div>
+</div>
+
+<style>
+    /* VIEWPORT: ANA SAYFA İLE AYNI ZEMİN */
+    .upload-viewport-modern {
+        background-color: #f8fafc;
+        min-height: 100%;
+        display: flex;
+        justify-content: center;
+        align-items: flex-start;
+        padding: 40px 20px;
+    }
+
+    .form-container-compact { width: 100%; max-width: 680px; }
+
+    /* BAŞLIK TASARIMI */
+    .pro-form-title {
+        font-size: 2.2rem;
+        font-weight: 900;
+        color: #0f172a;
+        letter-spacing: -1.5px;
+        margin-bottom: 0;
+    }
+
+    .pro-title-divider {
+        width: 60px; height: 5px; background: #4f46e5;
+        margin: 20px auto; border-radius: 10px;
+    }
+
+    .pro-form-subtitle { color: #64748b; font-size: 0.95rem; margin-bottom: 35px; }
+
+    /* KART TASARIMI */
+    .pro-card-form {
+        background: white;
+        border: 1px solid #e2e8f0;
+        border-radius: 24px;
+        padding: 40px;
+        box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05);
+    }
+
+    .pro-input-label {
+        font-size: 0.65rem; font-weight: 800; color: #94a3b8;
+        letter-spacing: 1.2px; margin-bottom: 10px; display: block;
+    }
+
+    /* INPUT KONTROLLERİ */
+    .input-control-wrapper {
+        position: relative;
+        display: flex;
+        align-items: center;
+        background: #f8fafc;
+        border: 1px solid #e2e8f0;
+        border-radius: 14px;
+        transition: 0.3s;
+    }
+
+    .input-control-wrapper i { position: absolute; left: 16px; color: #94a3b8; font-size: 1.1rem; }
+    
+    .pro-input-field {
+        width: 100%;
+        background: transparent;
+        border: none;
+        padding: 14px 16px 14px 48px;
+        color: #1e293b;
+        font-size: 0.95rem;
+        font-weight: 500;
+    }
+
+    .pro-input-field:focus { outline: none; }
+    .input-control-wrapper:focus-within {
+        border-color: #4f46e5;
+        background: white;
+        box-shadow: 0 0 0 4px rgba(79, 70, 229, 0.05);
+    }
+
+    /* DROP ZONE */
+    .pro-drop-zone {
+        border: 2px dashed #cbd5e1;
+        border-radius: 18px;
+        background: #f8fafc;
+        transition: 0.3s;
+        position: relative;
+    }
+
+    .pro-drop-zone:hover { border-color: #4f46e5; background: rgba(79, 70, 229, 0.04); }
+    .file-active { border-color: #22c55e !important; background: #f0fff4 !important; border-style: solid; }
+
+    .drop-zone-label { width: 100%; padding: 40px 20px; text-align: center; cursor: pointer; display: block; }
+    
+    .drop-icon-box {
+        width: 54px; height: 54px; background: white; border-radius: 14px;
+        display: flex; align-items: center; justify-content: center;
+        margin: 0 auto 15px; font-size: 1.5rem; color: #4f46e5;
+        box-shadow: 0 4px 10px rgba(0,0,0,0.05);
+    }
+    .drop-icon-box.success { color: #22c55e; }
+
+    .drop-main-text { display: block; font-weight: 700; color: #334155; font-size: 0.9rem; margin-bottom: 4px; }
+    .drop-sub-text { font-size: 0.75rem; color: #94a3b8; }
+
+    /* BUTONLAR */
+    .pro-form-footer { display: flex; gap: 15px; }
+    
+    .btn-pro-primary {
+        flex: 2;
+        background: #0f172a;
+        color: white;
+        border: none;
+        padding: 16px;
+        border-radius: 14px;
+        font-weight: 700;
+        font-size: 0.9rem;
+        transition: 0.3s;
+    }
+
+    .btn-pro-primary:hover:not(:disabled) {
+        background: #1e293b;
+        transform: translateY(-2px);
+        box-shadow: 0 8px 20px rgba(15, 23, 42, 0.2);
+    }
+
+    .btn-pro-ghost {
+        flex: 1;
+        background: #f1f5f9;
+        color: #475569;
+        border: none;
+        padding: 16px;
+        border-radius: 14px;
+        font-weight: 700;
+        font-size: 0.9rem;
+    }
+
+    /* ANİMASYON */
+    .animate-slide-up { animation: slideUp 0.5s ease-out; }
+    @@keyframes slideUp { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+</style>
+
+@code {
+    // C# Logic (Değişmedi kanka)
+    private Dataset newDataset = new Dataset { FacultyId = 1 };
+    private IBrowserFile? selectedFile;
+    private bool isUploading = false;
+    private void LoadFiles(InputFileChangeEventArgs e) => selectedFile = e.File;
+    private void Cancel() => NavManager.NavigateTo("/dashboard");
+
+    private string facultyName = "Faculty of Engineering";
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+        if (user == null || user.Identity == null || !user.Identity.IsAuthenticated || !user.IsInRole("Admin"))
+        {
+            NavManager.NavigateTo("/login");
+            return;
+        }
+
+        var facultyIdClaim = user.FindFirst("FacultyId")?.Value;
+        if (int.TryParse(facultyIdClaim, out var facultyId))
+        {
+            newDataset.FacultyId = facultyId;
+            var faculties = await FacultyRepository.GetAllAsync();
+            var faculty = faculties.FirstOrDefault(f => f.Id == facultyId);
+            if (faculty != null)
+            {
+                facultyName = faculty.Name;
+            }
+        }
+    }
+
+    private async Task HandleSave()
+    {
+        if (selectedFile == null || isUploading) return;
+        isUploading = true;
+        try {
+            var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+            var user = authState.User;
+            var userIdStr = user.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            var trustedFileName = Guid.NewGuid().ToString() + "_" + selectedFile.Name;
+            var uploadsPath = Path.Combine(Environment.WebRootPath, "uploads");
+            if (!Directory.Exists(uploadsPath)) Directory.CreateDirectory(uploadsPath);
+            var path = Path.Combine(uploadsPath, trustedFileName);
+            using (var stream = selectedFile.OpenReadStream(maxAllowedSize: 15 * 1024 * 1024))
+            using (var fs = new FileStream(path, FileMode.Create)) { await stream.CopyToAsync(fs); }
+            int lineCount = 0;
+            int featureCount = 0;
+            if (path.EndsWith(".xlsx", StringComparison.OrdinalIgnoreCase) || path.EndsWith(".xls", StringComparison.OrdinalIgnoreCase))
+            {
+                try
+                {
+                    var start = new System.Diagnostics.ProcessStartInfo
+                    {
+                        FileName = "python",
+                        Arguments = $"-c \"import pandas as pd; df = pd.read_excel(r'{path}'); print(f'{{len(df)}},{{len(df.columns)}}')\"",
+                        UseShellExecute = false,
+                        RedirectStandardOutput = true,
+                        CreateNoWindow = true
+                    };
+                    using var process = System.Diagnostics.Process.Start(start);
+                    if (process != null)
+                    {
+                        using var reader = process.StandardOutput;
+                        string output = await reader.ReadToEndAsync();
+                        var parts = output.Trim().Split(',');
+                        if (parts.Length == 2 && int.TryParse(parts[0], out var rows) && int.TryParse(parts[1], out var cols))
+                        {
+                            lineCount = rows + 1; // +1 off-setting lineCount - 1 below
+                            featureCount = cols;
+                        }
+                    }
+                }
+                catch { }
+            }
+            else
+            {
+                using (var reader = new StreamReader(path)) { while (await reader.ReadLineAsync() != null) { lineCount++; } }
+                try
+                {
+                    var firstLine = await File.ReadLinesAsync(path).FirstOrDefaultAsync();
+                    if (!string.IsNullOrEmpty(firstLine))
+                    {
+                        var separator = firstLine.Contains(";") ? ';' : ',';
+                        featureCount = firstLine.Split(separator).Length;
+                    }
+                }
+                catch { }
+            }
+            newDataset.FileName = trustedFileName;
+            newDataset.UploadDate = DateTime.Now;
+            newDataset.FileSize = selectedFile.Size;
+            
+            var facultyIdClaim = user.FindFirst("FacultyId")?.Value;
+            if (int.TryParse(facultyIdClaim, out var facultyId))
+            {
+                newDataset.FacultyId = facultyId;
+            }
+            else
+            {
+                newDataset.FacultyId = 1;
+            }
+
+            newDataset.FeatureType = Path.GetExtension(selectedFile.Name).Replace(".", "").ToUpper();
+            newDataset.InstancesCount = lineCount > 0 ? lineCount - 1 : 0;
+            newDataset.FeaturesCount = featureCount;
+            newDataset.UploaderUserId = !string.IsNullOrEmpty(userIdStr) ? int.Parse(userIdStr) : 1;
+            await DatasetRepository.AddAsync(newDataset);
+            NavManager.NavigateTo("/dashboard");
+        } catch (Exception ex) { Console.WriteLine(ex.Message); }
+        finally { isUploading = false; }
+    }
+}

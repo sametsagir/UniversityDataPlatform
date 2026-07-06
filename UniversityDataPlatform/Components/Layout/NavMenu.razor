@@ -1,0 +1,256 @@
+@using UniversityDataPlatform.Data
+@using Microsoft.EntityFrameworkCore
+@using Microsoft.AspNetCore.Components.Authorization
+@inject IDatasetRepository DatasetRepository
+@inject IDbContextFactory<ApplicationDbContext> DbFactory
+@inject NavigationManager Navigation
+@inject AuthenticationStateProvider AuthProvider
+
+<div class="sidebar-v3">
+    @* PROFİL KARTI *@
+    <div class="user-profile-card">
+        <div class="p-avatar-wrap">
+            <div class="p-avatar-main">
+                <span>@GetInitials(userName)</span>
+            </div>
+            <div class="p-status-ring"></div>
+        </div>
+        
+        <div class="p-user-meta text-center">
+            <h6 class="p-name">@userName</h6>
+            <div class="p-role-badge">
+                <i class="bi bi-patch-check-fill"></i>
+                <span>@userRole</span>
+            </div>
+        </div>
+
+        <div class="p-stats-panel">
+            <div class="p-stat-box">
+                <span class="p-stat-label">DATASETS</span>
+                <span class="p-stat-val">@uploadedCount</span>
+            </div>
+            <div class="p-stat-sep"></div>
+            <div class="p-stat-box">
+                <span class="p-stat-label">VOLUME</span>
+                <span class="p-stat-val highlight">@totalSizeDisplay</span>
+            </div>
+        </div>
+    </div>
+
+    @* NAVİGASYON - İKON KAYMALARI FİKSLENDİ *@
+    <nav class="sidebar-navigation">
+        <div class="nav-header">MENU</div>
+        
+        <NavLink class="nav-item-btn" href="/dashboard" Match="NavLinkMatch.All">
+            <div class="nav-icon-box">
+                <i class="bi bi-house-door-fill"></i>
+            </div>
+            <span class="nav-text">Home</span>
+        </NavLink>
+
+        <AuthorizeView Roles="Admin">
+            <Authorized>
+                <button class="nav-item-btn action-style" @onclick="HandleUploadClick">
+                    <div class="nav-icon-box">
+                        <i class="bi bi-plus-circle-fill"></i>
+                    </div>
+                    <span class="nav-text">Upload Dataset</span>
+                </button>
+            </Authorized>
+        </AuthorizeView>
+    </nav>
+
+    @* FOOTER: AUTH BUTTONS *@
+    <div class="sidebar-auth-footer">
+        <AuthorizeView>
+            <Authorized>
+                @* IF SIGNED IN: SECURE LOGOUT *@
+                <button class="nav-item-btn logout-variant w-100 border-0 bg-transparent text-start" @onclick="HandleLogoutClick">
+                    <div class="nav-icon-box">
+                        <i class="bi bi-power"></i>
+                    </div>
+                    <span class="nav-text">Logout</span>
+                </button>
+            </Authorized>
+            <NotAuthorized>
+                @* IF SIGNED OUT: SYSTEM LOGIN *@
+                <NavLink class="nav-item-link login-variant" href="/login">
+                    <div class="nav-icon-box">
+                        <i class="bi bi-shield-lock-fill"></i>
+                    </div>
+                    <span class="nav-text">Login</span>
+                </NavLink>
+            </NotAuthorized>
+        </AuthorizeView>
+    </div>
+</div>
+
+<style>
+    .sidebar-v3 {
+        display: flex;
+        flex-direction: column;
+        height: 100%;
+        padding: 25px 18px;
+        background-color: #0f172a;
+    }
+
+    /* PROFİL KARTI */
+    .user-profile-card {
+        background: rgba(255, 255, 255, 0.03);
+        border: 1px solid rgba(255, 255, 255, 0.05);
+        border-radius: 24px;
+        padding: 20px 15px;
+        margin-bottom: 30px;
+    }
+
+    .p-avatar-wrap { position: relative; width: 64px; height: 64px; margin: 0 auto 12px; }
+    .p-avatar-main {
+        width: 100%; height: 100%; border-radius: 18px;
+        background: linear-gradient(135deg, #4f46e5 0%, #4338ca 100%);
+        display: flex; align-items: center; justify-content: center;
+        color: white; font-weight: 800; font-size: 1.2rem;
+    }
+    .p-status-ring {
+        position: absolute; bottom: -2px; right: -2px; width: 14px; height: 14px;
+        background: #10b981; border: 3px solid #0f172a; border-radius: 50%;
+    }
+
+    .p-name { color: #f8fafc; font-weight: 700; font-size: 1rem; margin-bottom: 5px; }
+    .p-role-badge {
+        display: inline-flex; align-items: center; gap: 5px;
+        background: rgba(79, 70, 229, 0.1); color: #818cf8;
+        padding: 4px 10px; border-radius: 100px; font-size: 0.65rem; font-weight: 800;
+    }
+
+    .p-stats-panel {
+        display: flex; justify-content: space-between; align-items: center;
+        margin-top: 20px; padding-top: 15px; border-top: 1px solid rgba(255,255,255,0.05);
+    }
+    .p-stat-box { flex: 1; display: flex; flex-direction: column; text-align: center; }
+    .p-stat-label { font-size: 0.55rem; color: #64748b; font-weight: 800; }
+    .p-stat-val { font-size: 0.75rem; color: #cbd5e1; font-weight: 700; }
+    .highlight { color: #4f46e5; }
+    .p-stat-sep { width: 1px; height: 20px; background: rgba(255,255,255,0.05); }
+
+    /* CRITICAL FIX: LİNKLER VE DİKEY HİZALAMA */
+    .nav-header { font-size: 0.65rem; font-weight: 800; color: #475569; letter-spacing: 1.5px; margin: 10px 10px; }
+    
+    .nav-item-btn, .nav-item-link {
+        display: flex !important; 
+        align-items: center !important; /* Metin ve İkon Kutusunu Dikeyde Eşitler */
+        justify-content: flex-start !important;
+        gap: 14px; 
+        padding: 12px 15px;
+        color: #94a3b8; 
+        text-decoration: none !important; 
+        border-radius: 14px;
+        transition: 0.2s ease; 
+        font-weight: 600; 
+        font-size: 0.95rem;
+        margin-bottom: 6px; 
+        border: none; 
+        background: transparent; 
+        width: 100%;
+        box-sizing: border-box;
+    }
+    
+    /* CRITICAL FIX: İKON KUTUSU MERKEZLEME (Kaymaları Yok Eden Alan) */
+    .nav-icon-box {
+        width: 36px; 
+        height: 36px; 
+        border-radius: 10px;
+        background: rgba(255, 255, 255, 0.03);
+        display: flex !important; 
+        align-items: center !important;     /* İkonu Dikeyde Ortalar */
+        justify-content: center !important;   /* İkonu Yatayda Ortalar */
+        flex-shrink: 0; 
+        box-sizing: border-box;
+    }
+
+    /* İkonun Kendisi İçin Satır İçi Boşlukları Temizleme */
+    .nav-icon-box i {
+        font-size: 1.2rem;
+        display: inline-flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        line-height: 1 !important;
+        margin: 0 !important;
+        padding: 0 !important;
+    }
+
+    .nav-item-btn:hover, .nav-item-link:hover { background: rgba(255,255,255,0.05); color: #f8fafc; }
+    
+    .nav-item-btn.active {
+        background: rgba(79, 70, 229, 0.1);
+        color: #4f46e5 !important;
+    }
+    .nav-item-btn.active .nav-icon-box { background: #4f46e5; color: white; }
+
+    /* AUTH PANEL VE BUTON VARYASYONLARI */
+    .sidebar-auth-footer { margin-top: auto; padding-top: 20px; border-top: 1px solid rgba(255,255,255,0.05); }
+    
+    /* Sisteme Giriş Butonu Özel Stili */
+    .login-variant { 
+        background: rgba(79, 70, 229, 0.08) !important; 
+        color: #818cf8 !important; 
+        border: 1px solid rgba(79, 70, 229, 0.2) !important; 
+    }
+    .login-variant:hover { background: #4338ca !important; color: white !important; }
+    .login-variant:hover .nav-icon-box { color: white; }
+
+    /* Güvenli Çıkış Butonu Özel Stili */
+    .logout-variant:hover { background: rgba(239, 68, 68, 0.08) !important; color: #ef4444 !important; }
+    .logout-variant:hover .nav-icon-box { color: #ef4444; background: rgba(239, 68, 68, 0.1); }
+</style>
+
+@code {
+    [Parameter] public EventCallback OnLogoutRequested { get; set; }
+    private string userName = "Guest User";
+    private string userRole = "Visitor";
+    private int uploadedCount = 0;
+    private string totalSizeDisplay = "0 KB";
+    private bool showGuestWarning = false;
+
+    protected override async Task OnInitializedAsync() {
+        await LoadUserInfo();
+        await RefreshStats();
+    }
+
+    private async Task LoadUserInfo() {
+        var authState = await AuthProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+        if (user.Identity?.IsAuthenticated ?? false) {
+            userName = user.Identity.Name ?? "User";
+            userRole = user.IsInRole("Admin") ? "Admin" : "Staff";
+        }
+    }
+
+    private async Task RefreshStats() {
+        try {
+            using var context = await DbFactory.CreateDbContextAsync();
+            uploadedCount = await context.Datasets.CountAsync();
+            var totalBytes = await context.Datasets.SumAsync(d => (long?)d.FileSize) ?? 0;
+            totalSizeDisplay = FormatBytes(totalBytes);
+        } catch { totalSizeDisplay = "0 KB"; }
+    }
+
+    private string FormatBytes(long bytes) {
+        if (bytes >= 1073741824) return $"{(bytes / 1073741824.0):F1} GB";
+        if (bytes >= 1048576) return $"{(bytes / 1048576.0):F1} MB";
+        return $"{(bytes / 1024.0):F1} KB";
+    }
+
+    private string GetInitials(string name) {
+        if (string.IsNullOrWhiteSpace(name)) return "??";
+        var words = name.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        return words.Length == 1 ? words[0][0].ToString().ToUpper() : (words[0][0].ToString() + words[^1][0].ToString()).ToUpper();
+    }
+
+    private async Task HandleUploadClick() {
+        var authState = await AuthProvider.GetAuthenticationStateAsync();
+        if (!authState.User.Identity.IsAuthenticated || !authState.User.IsInRole("Admin")) Navigation.NavigateTo("/login");
+        else Navigation.NavigateTo("/upload-dataset");
+    }
+
+    private async Task HandleLogoutClick() => await OnLogoutRequested.InvokeAsync();
+}

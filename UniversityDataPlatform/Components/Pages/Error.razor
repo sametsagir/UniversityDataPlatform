@@ -1,0 +1,55 @@
+@page "/error"
+@using UniversityDataPlatform.Models
+@using UniversityDataPlatform.Repositories.Interfaces
+@inject IFacultyRepository FacultyRepository
+
+<div class="container mt-4">
+    <div class="text-center mb-5">
+        <h2 class="fw-bold text-primary">Faculties</h2>
+        <p class="text-muted">Select a faculty to explore its datasets.</p>
+    </div>
+
+    @if (
+        faculties == null)
+    {
+        <div class="d-flex justify-content-center my-5">
+            <div class="spinner-border text-primary" role="status"></div>
+        </div>
+    }
+    else
+    {
+        <div class="row">
+            @foreach (var faculty in faculties)
+            {
+                <div class="col-md-4 mb-4">
+                    @* Burada senin Id bekleyen detay sayfana yönlendiriyoruz *@
+                    <a href="/faculty/@faculty.Id" class="text-decoration-none">
+                        <div class="card h-100 shadow-sm border-0 faculty-card">
+                            <div class="card-body text-center p-4">
+                                <div class="icon-box mb-3 mx-auto bg-light text-primary rounded-circle d-flex align-items-center justify-content-center" style="width: 70px; height: 70px;">
+                                    <i class="bi bi-building fs-2"></i>
+                                </div>
+                                <h5 class="card-title text-dark fw-bold">@faculty.Name</h5>
+                                <p class="card-text text-muted small">View Datasets</p>
+                            </div>
+                        </div>
+                    </a>
+                </div>
+            }
+        </div>
+    }
+</div>
+
+<style>
+    .faculty-card { transition: all 0.3s ease; border-top: 4px solid #4f46e5 !important; }
+    .faculty-card:hover { transform: translateY(-10px); box-shadow: 0 10px 20px rgba(0,0,0,0.1) !important; }
+</style>
+
+@code {
+    private IEnumerable<Faculty>? faculties;
+    protected override async Task OnInitializedAsync()
+    {
+        // Fetching faculties
+        faculties = await FacultyRepository.GetAllAsync();
+    }
+}

@@ -1,0 +1,653 @@
+@page "/dashboard"
+@using UniversityDataPlatform.Repositories.Interfaces
+@using UniversityDataPlatform.Models
+@using Microsoft.EntityFrameworkCore
+@using System.Text.Json
+@using UniversityDataPlatform.Services
+@inject IDatasetRepository DatasetRepository
+@inject IDbContextFactory<UniversityDataPlatform.Data.ApplicationDbContext> DbFactory
+@layout MainLayout
+
+<PageTitle>Home | KBU Data Platform</PageTitle>
+ 
+<div class="saas-container animate-fade-in">
+    
+    @* 10. DATA DENSITY: QUICK STATS CARDS *@
+    <section class="quick-stats-grid mb-4">
+        <div class="stat-trend-card">
+            <div class="st-icon blue"><i class="bi bi-layer-forward"></i></div>
+            <div class="st-meta">
+                <span class="st-title">Total Data Pools</span>
+                <h3 class="st-value">@((allDatasets?.Count ?? 0)) <span class="st-unit">Sets</span></h3>
+            </div>
+        </div>
+        <div class="stat-trend-card">
+            <div class="st-icon purple"><i class="bi bi-cpu"></i></div>
+            <div class="st-meta">
+                <span class="st-title">Classification Models</span>
+                <h3 class="st-value">@((allDatasets?.Count(d => d.SubjectArea.Contains("Class", StringComparison.OrdinalIgnoreCase)) ?? 0)) <span class="st-unit">Models</span></h3>
+            </div>
+        </div>
+        <div class="stat-trend-card">
+            <div class="st-icon green"><i class="bi bi-graph-up"></i></div>
+            <div class="st-meta">
+                <span class="st-title">Regression Models</span>
+                <h3 class="st-value">@((allDatasets?.Count(d => d.SubjectArea.Contains("Reg", StringComparison.OrdinalIgnoreCase)) ?? 0)) <span class="st-unit">Models</span></h3>
+            </div>
+        </div>
+    </section>
+
+    <div class="dashboard-viewport">
+        @* 4. SİDEBARI HAFİFLET & 8. FİLTRE PANELİNİ ZENGİNLEŞTİR *@
+        <aside class="explorer-sidebar">
+            <div class="explorer-header">
+                <i class="bi bi-sliders2"></i>
+                <span>Data Explorer</span>
+                @if (activeFilter != "all" || !string.IsNullOrWhiteSpace(searchTerm))
+                {
+                    <button @onclick="ResetFilters" class="btn-clear-filters ms-auto">
+                        <i class="bi bi-x-circle"></i> Reset
+                    </button>
+                }
+            </div>
+
+            <div class="explorer-menu">
+                <a href="/faculties" class="fac-nav-btn mb-3">
+                    <div class="fac-btn-content">
+                        <i class="bi bi-building"></i>
+                        <span>Academic Units</span>
+                    </div>
+                    <i class="bi bi-arrow-right-short ms-auto btn-arrow-move"></i>
+                </a>
+
+
+                <div class="accordion accordion-flush" id="filterAccordion">
+                      @* DATA STRUCTURE *@
+                    <div class="accordion-item border-0 mb-2">
+                        <h2 class="accordion-header">
+                            <button class="accordion-button collapsed pro-acc-btn" type="button" data-bs-toggle="collapse" data-bs-target="#formatCollapse">
+                                <i class="bi bi-file-earmark-code text-success"></i> Data Structure
+                            </button>
+                        </h2>
+                        <div id="formatCollapse" class="accordion-collapse collapse" data-bs-parent="#filterAccordion">
+                            <div class="accordion-body p-0">
+                                <button @onclick='() => SetFilter("csv")' class="filter-sub-item @(activeFilter == "csv" ? "sub-active" : "")">
+                                    <span class="dot"></span> CSV Format
+                                </button>
+                                <button @onclick='() => SetFilter("xlsx")' class="filter-sub-item @(activeFilter == "xlsx" ? "sub-active" : "")">
+                                    <span class="dot"></span> Excel Portal
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+ 
+                    @* MODEL CATEGORY *@
+                    <div class="accordion-item border-0 mb-2">
+                        <h2 class="accordion-header">
+                            <button class="accordion-button collapsed pro-acc-btn" type="button" data-bs-toggle="collapse" data-bs-target="#typeCollapse">
+                                <i class="bi bi-diagram-3 text-info"></i> Model Category
+                            </button>
+                        </h2>
+                        <div id="typeCollapse" class="accordion-collapse collapse" data-bs-parent="#filterAccordion">
+                            <div class="accordion-body p-0">
+                                <button @onclick='() => SetFilter("Classification")' class="filter-sub-item @(activeFilter == "Classification" ? "sub-active" : "")"><span class="dot"></span> Classification</button>
+                                <button @onclick='() => SetFilter("Regression")' class="filter-sub-item @(activeFilter == "Regression" ? "sub-active" : "")"><span class="dot"></span> Regression</button>
+                                <button @onclick='() => SetFilter("all")' class="filter-sub-item @(activeFilter == "all" ? "sub-active" : "")"><span class="dot"></span> All Models</button>
+                            </div>
+                        </div>
+                    </div>
+
+                     @* DATASET SCALE *@
+                     <div class="accordion-item border-0 mb-2">
+                         <h2 class="accordion-header">
+                             <button class="accordion-button collapsed pro-acc-btn" type="button" data-bs-toggle="collapse" data-bs-target="#scaleCollapse">
+                                 <i class="bi bi-hash text-warning"></i> Dataset Scale
+                             </button>
+                         </h2>
+                         <div id="scaleCollapse" class="accordion-collapse collapse" data-bs-parent="#filterAccordion">
+                             <div class="accordion-body p-0">
+                                 <button @onclick='() => SetFilter("scale-small")' class="filter-sub-item @(activeFilter == "scale-small" ? "sub-active" : "")"><span class="dot"></span> Small Scale (&lt; 1,000)</button>
+                                 <button @onclick='() => SetFilter("scale-medium")' class="filter-sub-item @(activeFilter == "scale-medium" ? "sub-active" : "")"><span class="dot"></span> Medium Scale (1,000 - 10,000)</button>
+                                 <button @onclick='() => SetFilter("scale-large")' class="filter-sub-item @(activeFilter == "scale-large" ? "sub-active" : "")"><span class="dot"></span> Large Scale (> 10,000)</button>
+                             </div>
+                         </div>
+                     </div>
+
+                     @* NUMBER OF FEATURES *@
+                     <div class="accordion-item border-0 mb-2">
+                         <h2 class="accordion-header">
+                             <button class="accordion-button collapsed pro-acc-btn" type="button" data-bs-toggle="collapse" data-bs-target="#featuresCollapse">
+                                 <i class="bi bi-columns text-primary"></i> Number of Features
+                             </button>
+                         </h2>
+                         <div id="featuresCollapse" class="accordion-collapse collapse" data-bs-parent="#filterAccordion">
+                             <div class="accordion-body p-0">
+                                 <button @onclick='() => SetFilter("features-low")' class="filter-sub-item @(activeFilter == "features-low" ? "sub-active" : "")"><span class="dot"></span> Low Dimensional (&lt; 10)</button>
+                                 <button @onclick='() => SetFilter("features-mid")' class="filter-sub-item @(activeFilter == "features-mid" ? "sub-active" : "")"><span class="dot"></span> Medium Dimensional (10 - 50)</button>
+                                 <button @onclick='() => SetFilter("features-high")' class="filter-sub-item @(activeFilter == "features-high" ? "sub-active" : "")"><span class="dot"></span> High Dimensional (> 50)</button>
+                             </div>
+                         </div>
+                     </div>
+
+                     @* FILE SIZE *@
+                     <div class="accordion-item border-0 mb-2">
+                         <h2 class="accordion-header">
+                             <button class="accordion-button collapsed pro-acc-btn" type="button" data-bs-toggle="collapse" data-bs-target="#sizeCollapse">
+                                 <i class="bi bi-hdd text-info"></i> File Size
+                             </button>
+                         </h2>
+                         <div id="sizeCollapse" class="accordion-collapse collapse" data-bs-parent="#filterAccordion">
+                             <div class="accordion-body p-0">
+                                 <button @onclick='() => SetFilter("size-small")' class="filter-sub-item @(activeFilter == "size-small" ? "sub-active" : "")"><span class="dot"></span> Light (&lt; 100 KB)</button>
+                                 <button @onclick='() => SetFilter("size-medium")' class="filter-sub-item @(activeFilter == "size-medium" ? "sub-active" : "")"><span class="dot"></span> Medium (100 KB - 5 MB)</button>
+                                 <button @onclick='() => SetFilter("size-large")' class="filter-sub-item @(activeFilter == "size-large" ? "sub-active" : "")"><span class="dot"></span> Large (&gt; 5 MB)</button>
+                             </div>
+                         </div>
+                     </div>
+
+                     @* ACADEMIC CITATION STATUS *@
+                     <div class="accordion-item border-0 mb-2">
+                         <h2 class="accordion-header">
+                             <button class="accordion-button collapsed pro-acc-btn" type="button" data-bs-toggle="collapse" data-bs-target="#papersCollapse">
+                                 <i class="bi bi-journal-bookmark-fill text-success"></i> Academic Citation / Ref
+                             </button>
+                         </h2>
+                         <div id="papersCollapse" class="accordion-collapse collapse" data-bs-parent="#filterAccordion">
+                             <div class="accordion-body p-0">
+                                 <button @onclick='() => SetFilter("papers-has")' class="filter-sub-item @(activeFilter == "papers-has" ? "sub-active" : "")"><span class="dot"></span> Citations Included</button>
+                                 <button @onclick='() => SetFilter("papers-none")' class="filter-sub-item @(activeFilter == "papers-none" ? "sub-active" : "")"><span class="dot"></span> Citations Missing</button>
+                             </div>
+                         </div>
+                     </div>
+
+                     @* HIGHLIGHTS *@
+                    <div class="accordion-item border-0 mb-2">
+                        <h2 class="accordion-header">
+                            <button class="accordion-button collapsed pro-acc-btn" type="button" data-bs-toggle="collapse" data-bs-target="#popCollapse">
+                                <i class="bi bi-lightning text-warning"></i> Highlights
+                            </button>
+                        </h2>
+                        <div id="popCollapse" class="accordion-collapse collapse" data-bs-parent="#filterAccordion">
+                            <div class="accordion-body p-0">
+                                <button @onclick='() => SetFilter("newest")' class="filter-sub-item @(activeFilter == "newest" ? "sub-active" : "")"><span class="dot"></span> Recently Added</button>
+                                <button @onclick='() => SetFilter("most-viewed")' class="filter-sub-item @(activeFilter == "most-viewed" ? "sub-active" : "")"><span class="dot"></span> Most Viewed</button>
+                                <button @onclick='() => SetFilter("highest-score")' class="filter-sub-item @(activeFilter == "highest-score" ? "sub-active" : "")"><span class="dot"></span> By Success Rate (Highest)</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    @* ANALYSIS STATUS *@
+                    <div class="accordion-item border-0 mb-2">
+                        <h2 class="accordion-header">
+                            <button class="accordion-button collapsed pro-acc-btn" type="button" data-bs-toggle="collapse" data-bs-target="#statusCollapse">
+                                <i class="bi bi-activity text-danger"></i> Analysis Status
+                            </button>
+                        </h2>
+                        <div id="statusCollapse" class="accordion-collapse collapse" data-bs-parent="#filterAccordion">
+                            <div class="accordion-body p-0">
+                                <button @onclick='() => SetFilter("status-analyzed")' class="filter-sub-item @(activeFilter == "status-analyzed" ? "sub-active" : "")"><span class="dot"></span> Analyzed</button>
+                                <button @onclick='() => SetFilter("status-pending")' class="filter-sub-item @(activeFilter == "status-pending" ? "sub-active" : "")"><span class="dot"></span> Awaiting Analysis</button>
+                                <button @onclick='() => SetFilter("status-error")' class="filter-sub-item @(activeFilter == "status-error" ? "sub-active" : "")"><span class="dot"></span> Analysis Errors</button>
+                            </div>
+                        </div>
+                    </div>
+
+
+                </div>
+            </div>
+        </aside>
+
+        <main class="explorer-main">
+            @* 7. VERCEL/LINEAR STYLE PREMIUM SEARCH BAR *@
+            <header class="explorer-top-bar">
+                <div class="title-meta">
+                    <h2>Data Library</h2>
+                    <p><span>@GetDisplayList().Count() records</span> listed in the current view</p>
+                </div>
+                <div class="search-wrapper-premium">
+                    <i class="bi bi-search search-icon-animate"></i>
+                    <input type="text" placeholder="Search by dataset name (e.g. Lung Cancer)..." @bind="searchTerm" @bind:event="oninput" />
+                    <div class="search-kbd">⌘K</div>
+                </div>
+            </header>
+
+            @if (allDatasets == null)
+            {
+                @* 11. LOADING SKELETON INTERACTION *@
+                <div class="skeleton-list">
+                    <div class="skeleton-card"></div>
+                    <div class="skeleton-card"></div>
+                    <div class="skeleton-card"></div>
+                </div>
+            }
+            else
+            {
+                @* 5. KATEGORİYE GÖRE AYRIŞTIRILMIŞ KART SİSTEMİ *@
+                <div class="dataset-grid">
+                    @foreach (var ds in GetDisplayList())
+                    {
+                        @* Dinamik Sınıf Belirleme (Classification -> purple, Regression -> green, default -> blue) *@
+                        var categoryClass = ds.SubjectArea.Contains("Class", StringComparison.OrdinalIgnoreCase) ? "theme-purple" :
+                                            ds.SubjectArea.Contains("Reg", StringComparison.OrdinalIgnoreCase) ? "theme-green" : "theme-blue";
+
+                        <a href="dataset-details/@ds.Id" class="dataset-card-premium @categoryClass">
+                            @* Sol İkon Yapısı (Hover olunca renk bağlamı değişir) *@
+                            <div class="card-icon-wrapper">
+                                <i class="bi bi-database-fill-check"></i>
+                            </div>
+
+                            @* 1. TYPOGRAPHY: BAŞLIK (GÜÇLÜ) - METADATA (SAKİN) *@
+                            <div class="card-core-info">
+                                <div class="title-badge-row">
+                                    <h4 class="dataset-premium-title">@ds.Title</h4>
+                                    <span class="custom-saas-badge">@FormatSubjectArea(ds.SubjectArea)</span>
+                                </div>
+                                <div class="dataset-premium-metadata">
+                                    <span class="meta-item"><i class="bi bi-building"></i> @ds.Faculty?.Name</span>
+                                    <span class="meta-sep">•</span>
+                                    <span class="meta-item"><i class="bi bi-calendar-event"></i> @ds.UploadDate.ToString("MMM yyyy")</span>
+                                    @if (datasetBestScores.ContainsKey(ds.Id))
+                                    {
+                                        <span class="meta-sep">•</span>
+                                        <span class="meta-item text-success fw-bold">
+                                            <i class="bi bi-trophy-fill text-warning me-1"></i> Success: %@datasetBestScores[ds.Id].ToString("F1")
+                                        </span>
+                                    }
+                                </div>
+                            </div>
+ 
+                            @* 1. TYPOGRAPHY: STATISTICS (HIGHLIGHT NUMERICS) *@
+                            <div class="card-metric-section">
+                                <div class="metric-pill">
+                                    <span class="m-value">@ds.InstancesCount</span>
+                                    <span class="m-label">INSTANCES</span>
+                                </div>
+                                <div class="metric-pill">
+                                    <span class="m-value">@ds.FeaturesCount</span>
+                                    <span class="m-label">FEATURES</span>
+                                </div>
+                                <div class="arrow-interaction">
+                                    <i class="bi bi-arrow-right"></i>
+                                </div>
+                            </div>
+                        </a>
+                    }
+                </div>
+            }
+        </main>
+    </div>
+</div>
+
+<style>
+    @* 13. UI KIT / DESIGN SYSTEM TOKENLARI *@
+    :root {
+        --space-xs: 8px;
+        --space-sm: 16px;
+        --space-md: 24px;
+        --space-lg: 32px;
+        
+        --radius-sm: 8px;
+        --radius-md: 14px;
+        --radius-lg: 20px;
+
+        --font-weight-normal: 500;
+        --font-weight-bold: 700;
+        --font-weight-heavy: 900;
+
+        --slate-900: #0f172a;
+        --slate-700: #334155;
+        --slate-500: #64748b;
+        --slate-400: #94a3b8;
+        --slate-100: #f1f5f9;
+        
+        --indigo-primary: #4f46e5;
+        --shadow-premium: 0 1px 3px 0 rgba(0, 0, 0, 0.05), 0 1px 2px -1px rgba(0, 0, 0, 0.05);
+        --shadow-elevation: 0 10px 15px -3px rgba(15, 23, 42, 0.03), 0 4px 6px -4px rgba(15, 23, 42, 0.03);
+        --transition-smooth: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    /* 2. SPACING SİSTEMİ VE GENEL VIEWPORT */
+    .saas-container { padding: var(--space-xs); background-color: #f8fafc; }
+    .dashboard-viewport { display: flex; gap: var(--space-md); padding: var(--space-xs); }
+
+    /* 4. SIDEBAR'I HAFİFLETME & YALINLAŞTIRMA */
+    .explorer-sidebar {
+        width: 310px; background: #ffffff; border-radius: var(--radius-lg);
+        border: 1px solid #e2e8f0; padding: var(--space-md); height: fit-content;
+        box-shadow: var(--shadow-premium); position: sticky; top: var(--space-sm);
+    }
+
+    .explorer-header {
+        display: flex; align-items: center; gap: var(--space-xs);
+        font-weight: var(--font-weight-heavy); font-size: 1.15rem; color: var(--slate-900);
+        margin-bottom: var(--space-md); letter-spacing: -0.5px;
+    }
+    .btn-clear-filters {
+        background: transparent;
+        border: none;
+        color: var(--slate-400);
+        font-size: 0.8rem;
+        font-weight: var(--font-weight-bold);
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        transition: var(--transition-smooth);
+        padding: 4px 8px;
+        border-radius: 6px;
+    }
+    .btn-clear-filters:hover {
+        color: var(--indigo-primary);
+        background: rgba(79, 70, 229, 0.08);
+    }
+    .explorer-header i { color: var(--indigo-primary); font-size: 1.3rem; }
+
+    .fac-nav-btn {
+        display: flex; align-items: center; padding: var(--space-sm);
+        background: var(--slate-100); border-radius: var(--radius-md); text-decoration: none !important;
+        color: var(--slate-700); font-weight: var(--font-weight-bold); transition: var(--transition-smooth);
+    }
+    .fac-nav-btn:hover { background: #e2e8f0; transform: translateY(-1px); }
+    .fac-btn-content { display: flex; align-items: center; gap: var(--space-xs); }
+    .btn-arrow-move { transition: var(--transition-smooth); font-size: 1.2rem; }
+    .fac-nav-btn:hover .btn-arrow-move { transform: translateX(4px); color: var(--indigo-primary); }
+
+    /* ACCORDION SAKİNLİĞİ */
+    .pro-acc-btn {
+        font-weight: var(--font-weight-bold) !important; color: var(--slate-700) !important;
+        background: #ffffff !important; padding: var(--space-sm) var(--space-xs) !important;
+        display: flex; align-items: center; gap: var(--space-xs); border: none; font-size: 0.9rem;
+    }
+    .pro-acc-btn:focus { box-shadow: none; }
+    .pro-acc-btn:not(.collapsed) { color: var(--indigo-primary) !important; font-weight: var(--font-weight-heavy) !important; }
+
+    .filter-sub-item {
+        width: 100%; text-align: left; background: transparent; border: none;
+        padding: 8px var(--space-sm) 8px 32px; font-size: 0.85rem; color: var(--slate-500);
+        font-weight: var(--font-weight-normal); border-radius: var(--radius-sm); transition: var(--transition-smooth);
+        display: flex; align-items: center; gap: 8px;
+    }
+    .filter-sub-item .dot { width: 5px; height: 5px; background: var(--slate-400); border-radius: 50%; transition: var(--transition-smooth); }
+    .filter-sub-item:hover { color: var(--slate-900); background: var(--slate-100); }
+    
+    /* 6. HOVER DENEYİMİ FİLTRE GERİ BİLDİRİMİ */
+    .filter-sub-item.sub-active {
+        color: var(--indigo-primary) !important; background-color: rgba(79, 70, 229, 0.08) !important;
+        font-weight: var(--font-weight-bold);
+    }
+    .filter-sub-item.sub-active .dot { background: var(--indigo-primary); transform: scale(1.4); }
+
+    /* SAĞ PANEL ALANI */
+    .explorer-main { flex: 1; min-width: 0; }
+    
+    .explorer-top-bar {
+        display: flex; justify-content: space-between; align-items: center;
+        margin-bottom: var(--space-md); background: #ffffff; padding: var(--space-sm) var(--space-md);
+        border-radius: var(--radius-lg); border: 1px solid #e2e8f0; box-shadow: var(--shadow-premium);
+    }
+    
+    /* 1. TYPOGRAPHY HİYERARŞİSİ BAŞLIK VE METADATA */
+    .title-meta h2 { font-weight: var(--font-weight-heavy); color: var(--slate-900); margin: 0; font-size: 1.45rem; letter-spacing: -0.8px; }
+    .title-meta p { color: var(--slate-500); margin: 4px 0 0; font-size: 0.85rem; }
+    .title-meta p span { font-weight: var(--font-weight-bold); color: var(--slate-700); }
+
+    /* 7. LINEAR / VERCEL STİLİ SEARCH BAR */
+    .search-wrapper-premium { position: relative; width: 340px; display: flex; align-items: center; }
+    .search-wrapper-premium i { position: absolute; left: 16px; color: var(--slate-400); transition: var(--transition-smooth); }
+    .search-wrapper-premium input {
+        width: 100%; padding: 10px 60px 10px 44px; border-radius: var(--radius-md);
+        border: 1px solid #e2e8f0; background: var(--slate-100); transition: var(--transition-smooth);
+        font-weight: var(--font-weight-normal); font-size: 0.9rem; color: var(--slate-900);
+    }
+    .search-wrapper-premium input:focus {
+        outline: none; border-color: #cbd5e1; background: #ffffff;
+        box-shadow: 0 0 0 1px #cbd5e1, 0 4px 12px rgba(15, 23, 42, 0.04);
+    }
+    .search-wrapper-premium input:focus + .search-icon-animate { color: var(--indigo-primary); transform: scale(1.1); }
+    .search-kbd {
+        position: absolute; right: 14px; background: #ffffff; border: 1px solid #e2e8f0;
+        border-radius: 6px; padding: 2px 6px; font-size: 0.7rem; font-weight: var(--font-weight-bold);
+        color: var(--slate-400); pointer-events: none; box-shadow: 0 1px 1px rgba(0,0,0,0.02);
+    }
+
+    /* 3. DEPTH (KATMAN HİSSİ) & 5. KART RENK VARYASYONLARI */
+    .dataset-grid { display: flex; flex-direction: column; gap: var(--space-sm); }
+    
+    .dataset-card-premium {
+        background: #ffffff; border: 1px solid #e2e8f0; border-radius: var(--radius-lg);
+        padding: var(--space-sm) var(--space-md); display: flex; align-items: center; gap: var(--space-md);
+        text-decoration: none !important; color: inherit; transition: var(--transition-smooth);
+        box-shadow: var(--shadow-premium); position: relative; overflow: hidden;
+    }
+    
+    /* 3. DEPTH ELEVATION VE HOVER SİSTEMİ */
+    .dataset-card-premium:hover {
+        transform: translateY(-2px) scale(1.002);
+        box-shadow: 0 12px 20px -3px rgba(15, 23, 42, 0.04), 0 4px 6px -2px rgba(15, 23, 42, 0.02);
+    }
+
+    .card-icon-wrapper {
+        width: 46px; height: 46px; border-radius: var(--radius-md);
+        display: flex; align-items: center; justify-content: center;
+        font-size: 1.3rem; transition: var(--transition-smooth); flex-shrink: 0;
+    }
+
+    .card-core-info { flex: 1; min-width: 0; }
+    .title-badge-row { display: flex; align-items: center; gap: 12px; margin-bottom: 6px; }
+    
+    /* 1. TYPOGRAPHY BAŞLIK (DAHA BÜYÜK DAHA KALIN) */
+    .dataset-premium-title { margin: 0; font-weight: var(--font-weight-heavy); color: var(--slate-900); font-size: 1.15rem; letter-spacing: -0.3px; }
+    
+    .custom-saas-badge {
+        font-size: 0.7rem; font-weight: var(--font-weight-bold); padding: 3px 10px; border-radius: 6px;
+        text-transform: uppercase; letter-spacing: 0.3px;
+    }
+    
+    /* 1. TYPOGRAPHY ALT BİLGİLER (DAHA KÜÇÜK DAHA GRİ) */
+    .dataset-premium-metadata { display: flex; align-items: center; gap: var(--space-xs); color: var(--slate-500); font-size: 0.82rem; }
+    .meta-item i { margin-right: 4px; color: var(--slate-400); }
+    .meta-sep { color: #cbd5e1; }
+
+    /* 1. TYPOGRAPHY SAYILAR EN DİKKAT ÇEKİCİ SÜTUN */
+    .card-metric-section { display: flex; align-items: center; gap: var(--space-md); }
+    .metric-pill { display: flex; flex-direction: column; align-items: flex-end; }
+    .metric-pill .m-value { font-weight: var(--font-weight-heavy); color: var(--slate-900); font-size: 1.15rem; letter-spacing: -0.5px; }
+    .metric-pill .m-label { font-size: 0.6rem; font-weight: var(--font-weight-bold); color: var(--slate-400); letter-spacing: 0.5px; }
+
+    /* 11. MICRO INTERACTION OK İŞARETİ DÖNÜŞÜMÜ */
+    .arrow-interaction { color: var(--slate-400); font-size: 1.2rem; transition: var(--transition-smooth); margin-left: 5px; }
+    .dataset-card-premium:hover .arrow-interaction { transform: translateX(4px); }
+
+    /* 5. DİNAMİK KATEGORİ RENK TOKENLARIMIZ (Glow ve İkon Arka Planları) */
+    .theme-purple .card-icon-wrapper { background: #faf5ff; color: #a855f7; }
+    .theme-purple .custom-saas-badge { background: #f3e8ff; color: #a855f7; }
+    .theme-purple:hover { border-color: #d8b4fe; }
+    .theme-purple:hover .card-icon-wrapper { background: #a855f7; color: #ffffff; }
+    .theme-purple:hover .arrow-interaction { color: #a855f7; }
+
+    .theme-green .card-icon-wrapper { background: #f0fdf4; color: #22c55e; }
+    .theme-green .custom-saas-badge { background: #dcfce7; color: #16a34a; }
+    .theme-green:hover { border-color: #bbf7d0; }
+    .theme-green:hover .card-icon-wrapper { background: #22c55e; color: #ffffff; }
+    .theme-green:hover .arrow-interaction { color: #22c55e; }
+
+    .theme-blue .card-icon-wrapper { background: rgba(79, 70, 229, 0.08); color: #4f46e5; }
+    .theme-blue .custom-saas-badge { background: rgba(79, 70, 229, 0.12); color: #4338ca; }
+    .theme-blue:hover { border-color: #c7d2fe; }
+    .theme-blue:hover .card-icon-wrapper { background: #4f46e5; color: #ffffff; }
+    .theme-blue:hover .arrow-interaction { color: #4f46e5; }
+
+    /* 10. QUICK STATS PREMIUM KARTLARI */
+    .quick-stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--space-sm); }
+    .stat-trend-card {
+        background: #ffffff; border: 1px solid #e2e8f0; border-radius: var(--radius-md);
+        padding: var(--space-sm); display: flex; align-items: center; gap: var(--space-sm);
+        box-shadow: var(--shadow-premium);
+    }
+    .st-icon { width: 42px; height: 42px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 1.2rem; }
+    .st-icon.blue { background: rgba(79, 70, 229, 0.08); color: #4f46e5; }
+    .st-icon.purple { background: #faf5ff; color: #a855f7; }
+    .st-icon.green { background: #f0fdf4; color: #22c55e; }
+    .st-meta { display: flex; flex-direction: column; }
+    .st-title { font-size: 0.75rem; font-weight: var(--font-weight-bold); color: var(--slate-500); }
+    .st-value { margin: 2px 0 0; font-weight: var(--font-weight-heavy); color: var(--slate-900); font-size: 1.2rem; }
+    .st-unit { font-size: 0.75rem; color: var(--slate-400); font-weight: var(--font-weight-normal); }
+
+    /* 11. SKELETON LOADER ANIMATION */
+    .skeleton-list { display: flex; flex-direction: column; gap: var(--space-sm); }
+    .skeleton-card {
+        height: 86px; background: linear-gradient(90deg, #f1f5f9 25%, #e2e8f0 50%, #f1f5f9 75%);
+        background-size: 200% 100%; animation: loadingSkeleton 1.5s infinite; border-radius: var(--radius-lg);
+    }
+    @@keyframes loadingSkeleton { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+
+    /* 12. MOBILE RESPONSIVE PLANLAMASI */
+    @@media (max-width: 1024px) {
+        .dashboard-viewport { flex-direction: column; }
+        .explorer-sidebar { width: 100%; position: static; }
+        .quick-stats-grid { grid-template-columns: 1fr; }
+        .search-wrapper-premium { width: 100%; }
+        .explorer-top-bar { flex-direction: column; align-items: flex-start; gap: var(--space-sm); }
+    }
+</style>
+
+@code {
+    private List<Dataset>? allDatasets;
+    private string searchTerm = "";
+    private string activeFilter = "all";
+    private Dictionary<int, double> datasetBestScores = new();
+    private HashSet<int> datasetIdsWithPapers = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        // GEÇİCİ DÜZELTME: Veritabanında DatasetPapers tablosu zaten var olduğu için EF geçişini manuel işaretle
+        try
+        {
+            using var context = await DbFactory.CreateDbContextAsync();
+            await context.Database.ExecuteSqlRawAsync(
+                "IF NOT EXISTS (SELECT * FROM __EFMigrationsHistory WHERE MigrationId = '20260606135800_AddDatasetPapers') " +
+                "INSERT INTO __EFMigrationsHistory (MigrationId, ProductVersion) VALUES ('20260606135800_AddDatasetPapers', '10.0.5')"
+            );
+        }
+        catch { }
+
+        // GEÇİCİ TEMİZLİK: Kırmızı Şarap Kalitesi Veri Setini Sil
+        try
+        {
+            using var context = await DbFactory.CreateDbContextAsync();
+            var dsToDelete = await context.Datasets.FirstOrDefaultAsync(d => d.Title.Contains("Şarap"));
+            if (dsToDelete != null)
+            {
+                var papers = context.DatasetPapers.Where(p => p.DatasetId == dsToDelete.Id);
+                context.DatasetPapers.RemoveRange(papers);
+
+                var analyses = context.DatasetAnalyses.Where(a => a.DatasetId == dsToDelete.Id);
+                context.DatasetAnalyses.RemoveRange(analyses);
+
+                context.Datasets.Remove(dsToDelete);
+                await context.SaveChangesAsync();
+
+                var filePath = Path.Combine("wwwroot", "uploads", dsToDelete.FileName);
+                if (File.Exists(filePath))
+                {
+                    File.Delete(filePath);
+                }
+            }
+        }
+        catch { }
+
+        var result = await DatasetRepository.GetAllWithDetailsAsync();
+        allDatasets = result.ToList();
+
+        try
+        {
+            using var context = await DbFactory.CreateDbContextAsync();
+            
+            var paperDatasetIds = await context.DatasetPapers
+                .Select(p => p.DatasetId)
+                .Distinct()
+                .ToListAsync();
+            datasetIdsWithPapers = new HashSet<int>(paperDatasetIds);
+
+            var analyses = await context.DatasetAnalyses.ToListAsync();
+            foreach (var analysis in analyses)
+            {
+                if (!string.IsNullOrEmpty(analysis.PerformanceJson))
+                {
+                    try
+                    {
+                        var performances = JsonSerializer.Deserialize<List<ModelPerformance>>(analysis.PerformanceJson);
+                        if (performances != null && performances.Any())
+                        {
+                            var bestScore = performances.Max(p => p.score);
+                            datasetBestScores[analysis.DatasetId] = bestScore;
+                        }
+                    }
+                    catch { }
+                }
+            }
+        }
+        catch { }
+    }
+
+    private void SetFilter(string filter) => activeFilter = filter;
+    private void ResetFilters()
+    {
+        activeFilter = "all";
+        searchTerm = "";
+    }
+
+    private IEnumerable<Dataset> GetDisplayList()
+    {
+        var list = allDatasets ?? new List<Dataset>();
+        if (!string.IsNullOrWhiteSpace(searchTerm))
+            list = list.Where(d => d.Title.Contains(searchTerm, StringComparison.OrdinalIgnoreCase)).ToList();
+
+        // Analiz yüzdelerine göre (en yüksek başarı oranına göre) yüksekten düşüğe sırala
+        list = list.OrderByDescending(d => datasetBestScores.ContainsKey(d.Id) ? datasetBestScores[d.Id] : -1).ToList();
+
+        list = activeFilter switch
+        {
+            "csv" => list.Where(d => !string.IsNullOrEmpty(d.FileName) && d.FileName.EndsWith(".csv", StringComparison.OrdinalIgnoreCase)).ToList(),
+            "xlsx" => list.Where(d => !string.IsNullOrEmpty(d.FileName) && (d.FileName.EndsWith(".xlsx") || d.FileName.EndsWith(".xls"))).ToList(),
+            "Classification" => list.Where(d => d.SubjectArea.Contains("Class", StringComparison.OrdinalIgnoreCase)).ToList(),
+            "Regression" => list.Where(d => d.SubjectArea.Contains("Reg", StringComparison.OrdinalIgnoreCase)).ToList(),
+            "newest" => list.OrderByDescending(d => d.UploadDate).ToList(),
+            "most-viewed" => list.OrderByDescending(d => DatasetViewTracker.GetViews(d.Id)).ToList(),
+            "highest-score" => list.OrderByDescending(d => datasetBestScores.ContainsKey(d.Id) ? datasetBestScores[d.Id] : -1).ToList(),
+            "status-analyzed" => list.Where(d => datasetBestScores.ContainsKey(d.Id) && !d.SubjectArea.Contains("Error", StringComparison.OrdinalIgnoreCase) && !d.SubjectArea.Equals("Analysis Error", StringComparison.OrdinalIgnoreCase)).ToList(),
+            "status-pending" => list.Where(d => d.SubjectArea.Equals("Awaiting Analysis", StringComparison.OrdinalIgnoreCase) || d.SubjectArea.Equals("Software/Technology", StringComparison.OrdinalIgnoreCase) || string.IsNullOrEmpty(d.SubjectArea)).ToList(),
+            "status-error" => list.Where(d => d.SubjectArea.Contains("Error", StringComparison.OrdinalIgnoreCase) || d.SubjectArea.Equals("Analysis Error", StringComparison.OrdinalIgnoreCase)).ToList(),
+
+            "scale-small" => list.Where(d => d.InstancesCount < 1000).ToList(),
+            "scale-medium" => list.Where(d => d.InstancesCount >= 1000 && d.InstancesCount <= 10000).ToList(),
+            "scale-large" => list.Where(d => d.InstancesCount > 10000).ToList(),
+            "features-low" => list.Where(d => d.FeaturesCount.GetValueOrDefault() < 10).ToList(),
+            "features-mid" => list.Where(d => d.FeaturesCount.GetValueOrDefault() >= 10 && d.FeaturesCount.GetValueOrDefault() <= 50).ToList(),
+            "features-high" => list.Where(d => d.FeaturesCount.GetValueOrDefault() > 50).ToList(),
+            "papers-has" => list.Where(d => datasetIdsWithPapers.Contains(d.Id)).ToList(),
+            "papers-none" => list.Where(d => !datasetIdsWithPapers.Contains(d.Id)).ToList(),
+            "size-small" => list.Where(d => d.FileSize < 102400).ToList(), // 100 KB
+            "size-medium" => list.Where(d => d.FileSize >= 102400 && d.FileSize <= 5242880).ToList(), // 100 KB - 5 MB
+            "size-large" => list.Where(d => d.FileSize > 5242880).ToList(), // > 5 MB
+            _ => list
+        };
+        return list;
+    }
+
+
+    private string FormatSubjectArea(string? subjectArea)
+    {
+        if (string.IsNullOrEmpty(subjectArea)) return "Awaiting Analysis";
+        if (subjectArea.Equals("Classification", StringComparison.OrdinalIgnoreCase)) return "Classification";
+        if (subjectArea.Equals("Regression", StringComparison.OrdinalIgnoreCase)) return "Regression";
+        if (subjectArea.Equals("Yazılım/Teknoloji", StringComparison.OrdinalIgnoreCase)) return "Awaiting Analysis";
+        if (subjectArea.Equals("Software/Technology", StringComparison.OrdinalIgnoreCase)) return "Awaiting Analysis";
+        if (subjectArea.Equals("Error", StringComparison.OrdinalIgnoreCase) || subjectArea.Contains("Error", StringComparison.OrdinalIgnoreCase)) return "Analysis Error";
+        return subjectArea;
+    }
+
+    public class ModelPerformance {
+        public string model_name { get; set; } = "";
+        public double score { get; set; }
+    }
+}

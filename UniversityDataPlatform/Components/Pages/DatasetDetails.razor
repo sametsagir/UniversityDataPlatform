@@ -1,0 +1,1177 @@
+@page "/dataset-details/{Id:int}"
+@using UniversityDataPlatform.Models
+@using UniversityDataPlatform.Repositories.Interfaces
+@using UniversityDataPlatform.Services
+@using Microsoft.AspNetCore.Hosting
+@using System.IO
+@using Microsoft.EntityFrameworkCore
+@using System.Text.Json
+@inject IDatasetRepository DatasetRepository
+@inject IWebHostEnvironment HostEnvironment
+@inject IJSRuntime JSRuntime
+@inject AcademicSearchService AcademicSearchService
+@using Microsoft.AspNetCore.Components.Authorization
+@inject AuthenticationStateProvider AuthStateProvider
+
+<div class="container mt-4 mb-5">
+    @if (isLoading)
+    {
+        <div class="d-flex justify-content-center py-5">
+            <div class="spinner-border" style="color: #4f46e5;" role="status"></div>
+        </div>
+    }
+    else if (currentDataset == null)
+    {
+        <div class="alert alert-danger py-5 text-center shadow-sm border-0 rounded-4 animate-slide-up">
+            <i class="bi bi-exclamation-triangle fs-1 d-block mb-3 text-danger"></i>
+            <h4 class="fw-bold text-dark">Dataset Not Found</h4>
+            <p class="text-muted">The dataset you are looking for does not exist in the system or may have been removed.</p>
+            <a href="/dashboard" class="btn text-white px-4 py-2 mt-2 border-0 shadow-sm" style="background-color: #4f46e5; border-radius: 10px;">
+                <i class="bi bi-arrow-left"></i> Back to Home
+            </a>
+        </div>
+    }
+    else
+    {
+        @* ÜST NAVİGASYON VE BAŞLIK *@
+        <div class="row mb-4">
+            <div class="col-12">
+                <nav aria-label="breadcrumb">
+                    <ol class="breadcrumb mb-2 small">
+                        <li class="breadcrumb-item"><a href="/dashboard" class="text-decoration-none">Home</a></li>
+                        <li class="breadcrumb-item"><a href="/faculties" class="text-decoration-none">@currentDataset.Faculty?.Name</a></li>
+                        <li class="breadcrumb-item active">Dataset Details</li>
+                    </ol>
+                </nav>
+                <div class="d-flex justify-content-between align-items-end">
+                    <div>
+                        <h1 class="fw-bold text-dark display-5 mb-1">@currentDataset.Title</h1>
+                        <p class="text-muted small mb-0"><i class="bi bi-calendar-event me-1"></i> Upload Date: @currentDataset.UploadDate.ToLongDateString()</p>
+                    </div>
+                    <span class="badge border px-3 py-2 rounded-pill" style="background-color: #eef2ff; color: #4f46e5; border-color: rgba(79, 70, 229, 0.2) !important;">
+                        <i class="bi bi-person-fill me-1"></i> @currentDataset.UploaderUser?.FullName
+                    </span>
+                </div>
+            </div>
+        </div>
+
+        @* ÖZET İSTATİSTİK KARTLARI *@
+        <div class="row g-3 mb-5 text-center">
+            <div class="col-md-3">
+                <div class="card h-100 shadow-sm border-0 bg-white p-3 stats-card">
+                    <i class="bi bi-cpu fs-3 mb-2" style="color: #4f46e5;"></i>
+                    <small class="text-uppercase fw-bold text-muted lh-1 mb-1" style="font-size: 0.65rem;">Analysis Type</small>
+                    <span class="fw-bold fs-5">@(pythonResult?.task_type == "Classification" ? "Classification" : (pythonResult?.task_type == "Regression" ? "Regression" : "Not Determined"))</span>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card h-100 shadow-sm border-0 bg-white p-3 stats-card">
+                    <i class="bi bi-layers-fill fs-3 mb-2" style="color: #10b981;"></i>
+                    <small class="text-uppercase fw-bold text-muted lh-1 mb-1" style="font-size: 0.65rem;">Instances (Rows)</small>
+                    <span class="fw-bold fs-5">@(pythonResult?.instances ?? currentDataset.InstancesCount)</span>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card h-100 shadow-sm border-0 bg-white p-3 stats-card">
+                    <i class="bi bi-table fs-3 mb-2" style="color: #a855f7;"></i>
+                    <small class="text-uppercase fw-bold text-muted lh-1 mb-1" style="font-size: 0.65rem;">Features (Columns)</small>
+                    <span class="fw-bold fs-5">@(pythonResult?.features ?? (headers?.Count ?? 0))</span>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card h-100 shadow-sm border-0 bg-white p-3 stats-card">
+                    <i class="bi bi-file-earmark-check fs-3 mb-2" style="color: #f59e0b;"></i>
+                    <small class="text-uppercase fw-bold text-muted lh-1 mb-1" style="font-size: 0.65rem;">File Format</small>
+                    <span class="fw-bold fs-5">@currentDataset.FileName.Split('.').Last().ToUpper()</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="row">
+            <div class="col-lg-8">
+                @* AÇIKLAMA BÖLÜMÜ *@
+                <div class="mb-5 bg-white p-4 rounded-3 shadow-sm border">
+                    <h4 class="fw-bold border-bottom pb-2 mb-3 text-dark">Dataset Information</h4>
+                    <p class="text-secondary" style="line-height: 1.8; text-align: justify;">@currentDataset.Description</p>
+                </div>
+
+                @* AUTOML YAPILANDIRMASI *@
+                @if (isAuthenticated)
+                {
+                    <div class="card shadow-sm border-0 mb-5">
+                        <div class="card-header bg-white py-3 border-bottom d-flex align-items-center">
+                            <h5 class="mb-0 fw-bold" style="color: #4f46e5;"><i class="bi bi-sliders me-2"></i>AutoML Analysis Configuration</h5>
+                        </div>
+                        <div class="card-body p-4 bg-white">
+                            <div class="row">
+                                <!-- TARGET VARIABLE (Y) -->
+                                <div class="col-md-6 mb-3 mb-md-0">
+                                    <label class="form-label fw-bold text-dark mb-2" style="font-size: 1.05rem;">Target Variable (Y)</label>
+                                    <select class="form-select form-select-lg mb-2" @bind="selectedTargetColumn" disabled="@(!isAuthenticated)" style="border-radius: 8px; font-size: 0.95rem; height: 50px;">
+                                        @if (headers != null)
+                                        {
+                                            @foreach (var header in headers)
+                                            {
+                                                <option value="@header">@header</option>
+                                            }
+                                        }
+                                    </select>
+                                    <small class="text-muted d-block mt-1" style="font-size: 0.85rem;">Models will be trained to predict this column.</small>
+                                </div>
+
+                                <!-- VARIABLES TO EXCLUDE (X) -->
+                                <div class="col-md-6">
+                                    <label class="form-label fw-bold text-dark mb-2" style="font-size: 1.05rem;">Variables to Exclude (X)</label>
+                                    <div class="border rounded p-3 bg-white" style="max-height: 180px; overflow-y: auto; border-color: #cbd5e1 !important; border-radius: 8px !important;">
+                                        @if (headers != null)
+                                        {
+                                            @foreach (var header in headers)
+                                            {
+                                                bool isTarget = header == selectedTargetColumn;
+                                                if (isTarget) continue;
+                                                
+                                                bool isExcluded = excludedColumns.Contains(header);
+                                                
+                                                <div class="form-check mb-2 d-flex align-items-center">
+                                                    <input class="form-check-input" type="checkbox" id="chk-@header" 
+                                                           checked="@isExcluded" 
+                                                           @onchange="@((e) => OnExcludeCheckboxChanged(header, e))"
+                                                           disabled="@(!isAuthenticated)"
+                                                           style="width: 18px; height: 18px; border-radius: 4px;" />
+                                                    <label class="form-check-label text-dark ms-2" style="font-size: 0.95rem; cursor: pointer; user-select: none;" for="chk-@header">
+                                                        @header
+                                                    </label>
+                                                </div>
+                                            }
+                                        }
+                                    </div>
+                                    <small class="text-muted d-block mt-2" style="font-size: 0.85rem;">Selected columns will not be used as input features in model training.</small>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                }
+
+                @if (pythonResult != null && pythonResult.task_type == "Error")
+                {
+                    <div class="alert alert-danger border-0 mb-4 fw-bold shadow-sm" style="background-color: #fef2f2; color: #ef4444; border: 1px solid #fee2e2; border-radius: 8px;">
+                        <i class="bi bi-exclamation-triangle-fill me-2"></i> Analysis Error: @(pythonResult.error ?? "An unknown error occurred.")
+                    </div>
+                }
+
+                @* DEĞİŞKEN BİLGİLERİ TABLOSU *@
+                <div class="card shadow-sm border-0 mb-5">
+                    <div class="card-header bg-white py-3 border-bottom d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0 fw-bold" style="color: #4f46e5;"><i class="bi bi-info-circle-fill me-2"></i>Variable Properties (Metadata)</h5>
+                        <span class="badge bg-light text-dark border">@(pythonResult?.variables?.Count ?? headers?.Count ?? 0) Variables</span>
+                    </div>
+                    <div class="card-body p-0">
+                        <div class="table-responsive">
+                            <table class="table table-hover mb-0" style="font-size: 0.9rem;">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th class="ps-3">Variable Name</th>
+                                        <th>Model Role</th>
+                                        <th>Data Type</th>
+                                        <th class="text-center">Missing Values</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @if (pythonResult?.variables != null && pythonResult.variables.Any())
+                                    {
+                                        @foreach (var v in pythonResult.variables)
+                                        {
+                                            var role = GetColumnRole(v.name);
+                                            <tr>
+                                                <td class="ps-3 fw-bold text-dark">@v.name</td>
+                                                <td>
+                                                    @if (role == "Target")
+                                                    {
+                                                        <span class="badge bg-warning text-dark">Target Variable</span>
+                                                    }
+                                                    else if (role == "Excluded")
+                                                    {
+                                                        <span class="badge bg-danger text-white">Excluded</span>
+                                                    }
+                                                    else
+                                                    {
+                                                        <span class="badge border" style="background-color: #eef2ff; color: #4f46e5; border-color: rgba(79, 70, 229, 0.2) !important;">Input Feature</span>
+                                                    }
+                                                </td>
+                                                <td><span class="text-muted">@(v.type == "Numeric" ? "Numeric" : (v.type == "Categorical" ? "Categorical" : v.type))</span></td>
+                                                <td class="text-center">@(v.missing == "0" ? "None" : $"{v.missing} Items")</td>
+                                            </tr>
+                                        }
+                                    }
+                                    else if (headers != null)
+                                    {
+                                        @foreach (var header in headers)
+                                        {
+                                            var columnName = header.Trim().Replace("\"", "");
+                                            var role = GetColumnRole(columnName);
+                                            <tr>
+                                                <td class="ps-3 fw-bold text-dark">@columnName</td>
+                                                <td>
+                                                    @if (role == "Target")
+                                                    {
+                                                        <span class="badge bg-warning text-dark">Target Variable</span>
+                                                    }
+                                                    else if (role == "Excluded")
+                                                    {
+                                                        <span class="badge bg-danger text-white">Excluded</span>
+                                                    }
+                                                    else
+                                                    {
+                                                        <span class="badge border" style="background-color: #eef2ff; color: #4f46e5; border-color: rgba(79, 70, 229, 0.2) !important;">Input Feature</span>
+                                                    }
+                                                </td>
+                                                <td>Unknown</td>
+                                                <td class="text-center">-</td>
+                                            </tr>
+                                        }
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- AKADEMİK ATIFLAR & REFERANSLAR -->
+                <div class="card shadow-sm border-0 mb-5">
+                    <div class="card-header bg-white py-3 border-bottom d-flex justify-content-between align-items-center flex-wrap gap-2">
+                        <div class="d-flex align-items-center">
+                            <i class="bi bi-shield-fill me-2 fs-4" style="color: #4f46e5;"></i>
+                            <h5 class="mb-0 fw-bold text-dark">@(isAuthenticated ? "Articles and References" : "Academic Resources")</h5>
+                        </div>
+                        @if (isAuthenticated)
+                        {
+                            <div class="d-flex gap-2">
+                                @if (showAiSearch)
+                                {
+                                    <button class="btn btn-header-solid shadow-none" @onclick="ToggleAiSearch">
+                                        <i class="bi bi-x-lg"></i> Close Search
+                                    </button>
+                                }
+                                else
+                                {
+                                    <button class="btn btn-header-outline shadow-none" @onclick="ToggleAiSearch">
+                                        <i class="bi bi-cpu"></i> Search with AI
+                                    </button>
+                                }
+ 
+                                @if (showManualForm)
+                                {
+                                    <button class="btn btn-header-solid shadow-none" @onclick="ToggleManualForm">
+                                        <i class="bi bi-x-lg"></i> Close Form
+                                    </button>
+                                }
+                                else
+                                {
+                                    <button class="btn btn-header-outline shadow-none" @onclick="ToggleManualForm">
+                                        <i class="bi bi-plus-lg"></i> Add Manually
+                                    </button>
+                                }
+                            </div>
+                        }
+                    </div>
+                    
+                    <div class="card-body p-4 bg-white">
+                        @if (datasetPapers == null || !datasetPapers.Any())
+                        {
+                            <div class="text-center py-5 border rounded-3 mb-4 bg-light" style="border-style: dashed !important; border-color: #cbd5e1 !important;">
+                                <i class="bi bi-files text-secondary display-4 d-block mb-3" style="opacity: 0.5;"></i>
+                                <p class="text-muted mb-0" style="font-size: 0.95rem;">No articles using or citing this dataset have been added yet.</p>
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="border rounded-3 p-3 bg-white shadow-sm mb-4">
+                                @foreach (var paper in datasetPapers)
+                                {
+                                    <div class="academic-paper-item d-flex justify-content-between align-items-center gap-3">
+                                        <div class="flex-grow-1 min-w-0">
+                                            <div class="text-wrap">
+                                                @if (!string.IsNullOrEmpty(paper.Url))
+                                                {
+                                                    <a href="@paper.Url" target="_blank" class="academic-paper-title-link">
+                                                        @(string.IsNullOrWhiteSpace(paper.Title) ? paper.Url : paper.Title)
+                                                        <i class="bi bi-box-arrow-up-right" style="font-size: 0.85rem;"></i>
+                                                    </a>
+                                                }
+                                                else
+                                                {
+                                                    <span class="fw-semibold text-dark" style="font-size: 1.1rem;">@(string.IsNullOrWhiteSpace(paper.Title) ? "Bağlantı" : paper.Title)</span>
+                                                }
+                                            </div>
+                                            <div class="academic-paper-meta">
+                                                <span>@paper.Authors</span>
+                                                <span class="academic-paper-bullet">•</span>
+                                                <span>@paper.Year</span>
+                                                <span class="academic-paper-bullet">•</span>
+                                                <span>@paper.Venue</span>
+                                            </div>
+                                        </div>
+                                        @if (isAuthenticated)
+                                        {
+                                            <div class="flex-shrink-0">
+                                                <button class="btn btn-delete-pill" @onclick="() => DeletePaper(paper.Id)" title="Delete">
+                                                    <i class="bi bi-trash"></i> Delete
+                                                </button>
+                                            </div>
+                                        }
+                                    </div>
+                                }
+                            </div>
+                        }
+
+                        @if (!string.IsNullOrEmpty(saveError))
+                        {
+                            <div class="alert alert-danger border-0 mt-3 mb-0 small fw-bold shadow-sm d-flex align-items-center justify-content-between" style="background-color: #fef2f2; color: #ef4444; border: 1px solid #fee2e2; border-radius: 8px;">
+                                <span><i class="bi bi-exclamation-triangle-fill me-2"></i> @saveError</span>
+                                <button type="button" class="btn-close" @onclick='() => saveError = ""' aria-label="Close" style="font-size: 0.75rem; box-shadow: none;"></button>
+                            </div>
+                        }
+
+                        <!-- MANUEL EKLEME FORMU -->
+                        @if (showManualForm)
+                        {
+                            <div class="card border mt-4 p-4 rounded-3 shadow-sm bg-white">
+                                <EditForm Model="newPaper" OnValidSubmit="SaveManualPaper">
+                                    <DataAnnotationsValidator />
+                                    <ValidationSummary class="text-danger small mb-3" />
+
+                                    <div class="mb-3">
+                                        <label class="form-label fw-bold text-muted small text-uppercase" style="letter-spacing: 0.05em; font-size: 0.75rem;">RESOURCE TITLE (REQUIRED)</label>
+                                        <InputText class="form-control form-control-lg w-100 bg-white shadow-none" @bind-Value="newPaper.Title" placeholder="e.g., Performance Analysis Report of Machine Learning Models" style="border-radius: 8px; font-size: 0.95rem; height: 50px; border-color: #cbd5e1;" />
+                                        <ValidationMessage For="@(() => newPaper.Title)" class="text-danger small mt-1" />
+                                    </div>
+
+                                    <div class="mb-4">
+                                        <label class="form-label fw-bold text-muted small text-uppercase" style="letter-spacing: 0.05em; font-size: 0.75rem;">RESOURCE LINK / URL (REQUIRED)</label>
+                                        <InputText class="form-control form-control-lg w-100 bg-white shadow-none" @bind-Value="newPaper.Url" placeholder="e.g., https://arxiv.org/abs/2206.15444" style="border-radius: 8px; font-size: 0.95rem; height: 50px; border-color: #cbd5e1;" />
+                                        <ValidationMessage For="@(() => newPaper.Url)" class="text-danger small mt-1" />
+                                    </div>
+
+                                    <div class="d-flex justify-content-end">
+                                        <button type="submit" class="btn btn-submit-paper py-2 px-4 shadow-sm text-white">
+                                            <i class="bi bi-download me-2"></i>Save Resource
+                                        </button>
+                                    </div>
+                                </EditForm>
+                            </div>
+                        }
+
+                        <!-- YAPAY ZEKÂ ARAMA FORMU -->
+                        @if (showAiSearch)
+                        {
+                            <div class="card border mt-4 p-4 rounded-3 shadow-sm bg-white">
+                                <div class="mb-4">
+                                    <label class="form-label fw-bold text-muted small text-uppercase" style="letter-spacing: 0.05em; font-size: 0.75rem;">AI ACADEMIC SEARCH QUERY</label>
+                                    <form @onsubmit:preventDefault class="d-flex gap-2 mt-2">
+                                        <input type="text" class="form-control form-control-lg bg-white shadow-none" @bind="searchAiQuery" @bind:event="oninput" placeholder="e.g., Comparative Analysis of Machine Learning Algorithms" style="border-radius: 8px; font-size: 0.95rem; height: 50px; border-color: #cbd5e1;" />
+                                        <button type="button" class="btn btn-primary fw-bold px-4 d-flex align-items-center gap-2 flex-shrink-0 text-white shadow-none" @onclick="SearchAiPapers" disabled="@isSearchingAi" style="border-radius: 8px; background-color: #4f46e5; border-color: #4f46e5;">
+                                            @if (isSearchingAi)
+                                            {
+                                                <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                                            }
+                                            else
+                                            {
+                                                <i class="bi bi-search"></i>
+                                            }
+                                            Search Articles
+                                        </button>
+                                    </form>
+                                </div>
+
+                                @if (aiSearchResults != null && aiSearchResults.Any())
+                                {
+                                    <div class="border rounded-3 p-3 bg-white shadow-sm mt-3">
+                                        @foreach (var res in aiSearchResults)
+                                        {
+                                            var alreadyAdded = datasetPapers.Any(dp => dp.Url.Equals(res.url, StringComparison.OrdinalIgnoreCase) || dp.Title.Equals(res.title, StringComparison.OrdinalIgnoreCase));
+                                            var authorNames = res.authors != null && res.authors.Any() 
+                                                ? string.Join(", ", res.authors.Select(a => a.name)) 
+                                                : "Belirtilmemiş";
+                                            <div class="academic-paper-item d-flex justify-content-between align-items-center gap-3">
+                                                <div class="flex-grow-1 min-w-0">
+                                                    <div class="text-wrap">
+                                                        @if (!string.IsNullOrEmpty(res.url))
+                                                        {
+                                                            <a href="@res.url" target="_blank" class="academic-paper-title-link">
+                                                                @res.title
+                                                                <i class="bi bi-box-arrow-up-right" style="font-size: 0.85rem;"></i>
+                                                            </a>
+                                                        }
+                                                        else
+                                                        {
+                                                            <span class="fw-semibold text-dark" style="font-size: 1.1rem;">@res.title</span>
+                                                        }
+                                                    </div>
+                                                    <div class="academic-paper-meta">
+                                                        <span>@authorNames</span>
+                                                        <span class="academic-paper-bullet">•</span>
+                                                        <span>@(res.year?.ToString() ?? DateTime.Now.Year.ToString())</span>
+                                                        <span class="academic-paper-bullet">•</span>
+                                                        <span>@(string.IsNullOrEmpty(res.venue) ? "Akademik Yayın" : res.venue)</span>
+                                                    </div>
+                                                </div>
+                                                <div class="flex-shrink-0">
+                                                    <button type="button" class="btn btn-save-paper" 
+                                                            @onclick="() => SaveAiPaper(res)"
+                                                            disabled="@alreadyAdded">
+                                                        @if (alreadyAdded)
+                                                        {
+                                                            <i class="bi bi-check2 me-1"></i><span>Kaydedildi</span>
+                                                        }
+                                                        else
+                                                        {
+                                                            <span>+ Kaydet</span>
+                                                        }
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        }
+                                    </div>
+                                }
+                                @if (!isSearchingAi && !string.IsNullOrEmpty(searchAiQuery))
+                                {
+                                    @if (!string.IsNullOrEmpty(aiSearchError))
+                                    {
+                                        <div class="text-center py-4">
+                                            <p class="text-muted mb-0 small"><i class="bi bi-exclamation-circle text-danger me-1"></i>Arama başarısız oldu: @aiSearchError</p>
+                                        </div>
+                                    }
+                                    else if (aiSearchResults != null && !aiSearchResults.Any())
+                                    {
+                                        <div class="text-center py-4">
+                                            <p class="text-muted mb-0">Aradığınız kriterlere uygun akademik makale bulunamadı.</p>
+                                        </div>
+                                    }
+                                }
+                            </div>
+                        }
+                    </div>
+                </div>
+
+                @* MODEL PERFORMANS ÇUBUKLARI *@
+                @if (pythonResult?.performance != null && pythonResult.performance.Any())
+                {
+                    <div class="card shadow-sm border-0 mb-5 overflow-hidden">
+                        <div class="card-header bg-white py-3 border-bottom">
+                            <h5 class="mb-0 fw-bold" style="color: #4f46e5;"><i class="bi bi-lightning-charge-fill me-2"></i>AutoML Model Success Rates</h5>
+                        </div>
+                        <div class="card-body p-4 bg-white">
+                            @foreach (var p in pythonResult.performance)
+                            {
+                                <div class="mb-4">
+                                    <div class="d-flex justify-content-between mb-2">
+                                        <span class="fw-bold text-dark">@p.model_name</span>
+                                        <span class="badge text-white" style="background-color: #4f46e5;">%@p.score</span>
+                                    </div>
+                                    <div class="progress" style="height: 10px; border-radius: 5px;">
+                                        <div class="progress-bar progress-bar-animated shadow-sm" style="width: @p.score%; background-color: #4f46e5;"></div>
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                    </div>
+                }
+
+                @* PYTHON GRAFİKLERİ *@
+                @if (pythonResult?.charts != null && pythonResult.charts.Any())
+                {
+                    <div class="row g-4 mt-2">
+                        <div class="col-12">
+                            <h4 class="fw-bold text-dark border-bottom pb-2 mb-4"><i class="bi bi-graph-up-arrow me-2"></i>Visual Data Analysis</h4>
+                        </div>
+                        @foreach (var chart in pythonResult.charts)
+                        {
+                            <div class="col-12 mb-4">
+                                <div class="card shadow-sm border-0 chart-container">
+                                    <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center">
+                                        <span class="fw-bold text-secondary text-uppercase small">@chart.Key.Replace("_", " ")</span>
+                                        <i class="bi bi-fullscreen text-muted" style="cursor: pointer;"></i>
+                                    </div>
+                                    <div class="card-body text-center p-2">
+                                        <img src="data:image/png;base64,@chart.Value" class="img-fluid rounded-2 analysis-img" alt="Analysis Chart" />
+                                    </div>
+                                </div>
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+
+            @* SAĞ SIDEBAR: EYLEM MERKEZİ *@
+            <div class="col-lg-4">
+                <div class="sticky-top" style="top: 20px;">
+                    <div class="card shadow-sm border-0 mb-4 text-white overflow-hidden" style="background-color: #4f46e5;">
+                        <div class="card-body p-4 position-relative">
+                            <i class="bi bi-database-fill position-absolute end-0 bottom-0 mb-n3 me-n2 opacity-25" style="font-size: 8rem;"></i>
+                            <h5 class="fw-bold mb-3">Data Access</h5>
+                            <div class="mb-4">
+                                <small class="d-block opacity-75">Server File Path:</small>
+                                <code class="text-white small">wwwroot/uploads/@currentDataset.FileName</code>
+                            </div>
+                            <div class="d-grid gap-2">
+                                <button class="btn btn-white fw-bold py-2 px-4 shadow-sm" @onclick="DownloadDataset">
+                                    <i class="bi bi-download me-2"></i> @($"Download as {currentDataset.FileName.Split('.').Last().ToUpper()}") (@FormatFileSize(fileSize))
+                                </button>
+                                @if (isAuthenticated)
+                                {
+                                    <button class="btn btn-outline-light fw-bold py-2 px-4" @onclick="StartAnalysis" disabled="@isAnalyzing">
+                                        @if (isAnalyzing)
+                                        {
+                                            <span class="spinner-border spinner-border-sm me-2"></span><span>Analyzing...</span>
+                                        }
+                                        else
+                                        {
+                                            <i class="bi bi-play-fill me-2"></i><span>@(pythonResult != null ? "Restart Analysis" : "Start Analysis")</span>
+                                        }
+                                    </button>
+                                }
+                            </div>
+                        </div>
+                    </div>
+
+                    @* DOSYA ÖZELLİKLERİ *@
+                    <div class="card shadow-sm border-0 bg-white p-3 mb-4">
+                        <div class="d-flex align-items-center mb-2">
+                            <i class="bi bi-info-square-fill me-2 fs-5" style="color: #4f46e5;"></i>
+                            <h6 class="mb-0 fw-bold">Platform Information</h6>
+                        </div>
+                        <ul class="list-unstyled small text-muted mb-0">
+                            <li class="mb-2 d-flex justify-content-between"><span>Academic Unit (Faculty):</span> <span class="text-dark fw-bold">@currentDataset.Faculty?.Name</span></li>
+                            <li class="mb-2 d-flex justify-content-between"><span>Verification Status:</span> <span class="badge bg-success">Verified</span></li>
+                            <li class="d-flex justify-content-between"><span>Subject Area:</span> <span class="text-dark fw-bold">@FormatSubjectArea(currentDataset.SubjectArea)</span></li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+<style>
+    .bg-soft-primary { background-color: #eef2ff; }
+    .stats-card { border-top: 4px solid #4f46e5 !important; transition: transform 0.2s; }
+    .stats-card:hover { transform: translateY(-5px); }
+    .analysis-img { width: 100%; max-height: 700px; object-fit: contain; background: white; }
+    .chart-container { transition: all 0.3s ease; }
+    .btn-white { background: white; color: #4f46e5; border: none; }
+    .btn-white:hover { background: #f8f9fa; color: #4338ca; }
+     
+     /* --- PREMİUM KAYDET & EYLEM BUTONLARI --- */
+     .btn-save-paper {
+          color: #4f46e5 !important;
+          border: 1.5px solid #4f46e5 !important;
+          background-color: transparent !important;
+          font-weight: 500;
+          font-size: 0.9rem;
+          padding: 6px 20px !important;
+          border-radius: 50px !important;
+          transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+          display: inline-flex;
+          align-items: center;
+          gap: 0.25rem;
+     }
+     .btn-save-paper:hover:not(:disabled) {
+          background-color: #4f46e5 !important;
+          color: #ffffff !important;
+          box-shadow: 0 4px 12px rgba(79, 70, 229, 0.2) !important;
+          transform: translateY(-1px);
+     }
+     .btn-save-paper:active:not(:disabled) {
+          transform: translateY(1px);
+     }
+     .btn-save-paper:disabled {
+          color: #9ca3af !important;
+          border-color: #e5e7eb !important;
+          background-color: #f3f4f6 !important;
+          cursor: not-allowed !important;
+          box-shadow: none !important;
+          transform: none !important;
+          opacity: 0.8;
+     }
+
+     .btn-submit-paper {
+          background: linear-gradient(135deg, #4f46e5, #6366f1) !important;
+          border: none !important;
+          color: #ffffff !important;
+          font-weight: 600;
+          letter-spacing: 0.02em;
+          transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1) !important;
+          box-shadow: 0 4px 12px rgba(79, 70, 229, 0.2) !important;
+     }
+     .btn-submit-paper:hover {
+          background: linear-gradient(135deg, #4338ca, #4f46e5) !important;
+          box-shadow: 0 6px 20px rgba(79, 70, 229, 0.4) !important;
+          transform: translateY(-2px);
+     }
+     .btn-submit-paper:active {
+          transform: translateY(0);
+          box-shadow: 0 3px 8px rgba(79, 70, 229, 0.2) !important;
+     }
+
+     /* --- HEADER BUTON MODELLERİ --- */
+     .btn-header-solid {
+          background-color: #4f46e5 !important;
+          color: #ffffff !important;
+          border: none !important;
+          font-weight: 500;
+          font-size: 0.95rem;
+          padding: 8px 20px !important;
+          border-radius: 8px !important;
+          transition: all 0.2s ease;
+          display: inline-flex;
+          align-items: center;
+          gap: 0.5rem;
+     }
+     .btn-header-solid:hover {
+          background-color: #4338ca !important;
+          box-shadow: 0 4px 12px rgba(79, 70, 229, 0.25) !important;
+     }
+
+     .btn-header-outline {
+          background-color: #ffffff !important;
+          color: #374151 !important;
+          border: 1px solid #d1d5db !important;
+          font-weight: 500;
+          font-size: 0.95rem;
+          padding: 8px 20px !important;
+          border-radius: 8px !important;
+          transition: all 0.2s ease;
+          display: inline-flex;
+          align-items: center;
+          gap: 0.5rem;
+     }
+     .btn-header-outline:hover {
+          background-color: #f9fafb !important;
+          border-color: #9ca3af !important;
+          color: #111827 !important;
+     }
+
+     /* --- AKADEMİK REFERANS LİSTE TASARIMI --- */
+     .academic-paper-item {
+          padding: 1rem 0.5rem;
+          border-bottom: 1px solid #e5e7eb;
+          transition: background-color 0.2s ease;
+     }
+     .academic-paper-item:last-child {
+          border-bottom: none;
+     }
+     .academic-paper-title-link {
+          color: #4f46e5 !important; /* Akademik mavi-indigo renk tonu */
+          font-weight: 600;
+          font-size: 1.05rem;
+          text-decoration: none;
+          display: inline-flex;
+          align-items: center;
+          gap: 0.35rem;
+          margin-bottom: 0.15rem;
+     }
+     .academic-paper-title-link:hover {
+          text-decoration: underline !important;
+          color: #3730a3 !important;
+     }
+     .academic-paper-meta {
+          color: #8c92a0 !important; /* Soluk gri renk */
+          font-size: 0.875rem;
+          display: flex;
+          align-items: center;
+          gap: 0.5rem;
+          flex-wrap: wrap;
+          margin-top: 0.25rem;
+     }
+     .academic-paper-bullet {
+          color: #d1d5db !important; /* Soluk bullet rengi */
+          font-size: 0.8rem;
+     }
+     .btn-delete-pill {
+          color: #dc3545 !important;
+          border: 1.5px solid #dc3545 !important;
+          background-color: transparent !important;
+          font-weight: 500;
+          font-size: 0.9rem;
+          padding: 6px 20px !important;
+          border-radius: 50px !important;
+          transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+          display: inline-flex;
+          align-items: center;
+          gap: 0.25rem;
+     }
+     .btn-delete-pill:hover {
+          background-color: #dc3545 !important;
+          color: #ffffff !important;
+          box-shadow: 0 4px 12px rgba(220, 53, 69, 0.2) !important;
+          transform: translateY(-1px);
+     }
+     .btn-delete-pill:active {
+          transform: translateY(1px);
+     }
+</style>
+
+@code {
+    [Parameter] public int Id { get; set; }
+    private Dataset? currentDataset;
+    private List<string>? headers;
+    private long fileSize = 0;
+    private AnalysisResult? pythonResult;
+    private bool isAnalyzing = false;
+    private bool isAuthenticated = false;
+
+    private List<DatasetPaper> datasetPapers = new();
+    private bool showManualForm = false;
+    private bool showAiSearch = false;
+    private string searchAiQuery = "";
+    private string aiSearchError = "";
+    private string saveError = "";
+    private bool isSearchingAi = false;
+    private List<AcademicSearchPaper> aiSearchResults = new();
+    private DatasetPaper newPaper = new() { Year = DateTime.Now.Year };
+
+    private void ToggleManualForm()
+    {
+        showManualForm = !showManualForm;
+        if (showManualForm) showAiSearch = false;
+    }
+
+    private void ToggleAiSearch()
+    {
+        showAiSearch = !showAiSearch;
+        if (showAiSearch) showManualForm = false;
+    }
+
+    private async Task SaveManualPaper()
+    {
+        if (string.IsNullOrWhiteSpace(newPaper.Title)) return;
+        if (string.IsNullOrWhiteSpace(newPaper.Url)) return;
+        
+        try
+        {
+            string cleanUrl = newPaper.Url.Trim();
+            if (!Uri.TryCreate(cleanUrl, UriKind.Absolute, out var validatedUri) || 
+                !(validatedUri.Scheme == Uri.UriSchemeHttp || validatedUri.Scheme == Uri.UriSchemeHttps))
+            {
+                saveError = "Please enter a valid URL (e.g. https://example.com).";
+                StateHasChanged();
+                return;
+            }
+
+            string domain = "Web Source";
+            try
+            {
+                domain = validatedUri.Host;
+                if (domain.StartsWith("www."))
+                {
+                    domain = domain.Substring(4);
+                }
+            }
+            catch {}
+
+            newPaper.DatasetId = Id;
+            newPaper.Title = newPaper.Title.Trim();
+            newPaper.Authors = "Not specified";
+            newPaper.Venue = domain;
+            newPaper.Year = DateTime.Now.Year;
+            newPaper.Url = cleanUrl;
+
+            await DatasetRepository.AddPaperAsync(newPaper);
+            
+            newPaper = new DatasetPaper { Year = DateTime.Now.Year };
+            datasetPapers = await DatasetRepository.GetPapersByDatasetIdAsync(Id);
+            showManualForm = false;
+            saveError = "";
+        }
+        catch (Exception ex)
+        {
+            saveError = $"Failed to save paper: {ex.Message} (Details: {ex.InnerException?.Message ?? "None"})";
+            Console.WriteLine($"Error saving manual paper: {ex.Message}");
+        }
+        StateHasChanged();
+    }
+
+    private async Task DeletePaper(int paperId)
+    {
+        try
+        {
+            await DatasetRepository.DeletePaperAsync(paperId);
+            datasetPapers = await DatasetRepository.GetPapersByDatasetIdAsync(Id);
+            saveError = "";
+        }
+        catch (Exception ex)
+        {
+            saveError = $"Failed to delete paper: {ex.Message} (Details: {ex.InnerException?.Message ?? "None"})";
+            Console.WriteLine($"Error deleting paper: {ex.Message}");
+        }
+        StateHasChanged();
+    }
+
+    private async Task SearchAiPapers()
+    {
+        if (string.IsNullOrWhiteSpace(searchAiQuery)) return;
+        
+        isSearchingAi = true;
+        aiSearchError = "";
+        aiSearchResults.Clear();
+        StateHasChanged();
+        
+        try
+        {
+            var searchResult = await AcademicSearchService.SearchPapersAsync(searchAiQuery);
+            if (!searchResult.IsSuccess)
+            {
+                aiSearchError = searchResult.ErrorMessage;
+            }
+            else
+            {
+                aiSearchResults = searchResult.Papers;
+            }
+        }
+        catch (Exception ex)
+        {
+            aiSearchError = "A technical error occurred during the academic search.";
+            Console.WriteLine($"Search papers error: {ex.Message}");
+        }
+        finally
+        {
+            isSearchingAi = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task SaveAiPaper(AcademicSearchPaper apiPaper)
+    {
+        try
+        {
+            var authorNames = apiPaper.authors != null && apiPaper.authors.Any()
+                ? string.Join(", ", apiPaper.authors.Select(a => a.name))
+                : "Not specified";
+
+            var paper = new DatasetPaper
+            {
+                DatasetId = Id,
+                Title = (apiPaper.title ?? "Untitled Paper").Trim(),
+                Authors = authorNames,
+                Year = apiPaper.year ?? DateTime.Now.Year,
+                Venue = string.IsNullOrWhiteSpace(apiPaper.venue) ? "Academic Publication" : apiPaper.venue.Trim(),
+                Url = apiPaper.url?.Trim() ?? "https://www.semanticscholar.org"
+            };
+
+            await DatasetRepository.AddPaperAsync(paper);
+            datasetPapers = await DatasetRepository.GetPapersByDatasetIdAsync(Id);
+            saveError = "";
+        }
+        catch (Exception ex)
+        {
+            saveError = $"Failed to save paper: {ex.Message} (Details: {ex.InnerException?.Message ?? "None"})";
+            Console.WriteLine($"Error saving AI paper: {ex.Message}");
+        }
+        StateHasChanged();
+    }
+
+    private bool isLoading = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        isLoading = true;
+        try
+        {
+            var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+            isAuthenticated = authState.User.Identity?.IsAuthenticated ?? false;
+        }
+        catch { }
+
+        try
+        {
+            currentDataset = await DatasetRepository.GetByIdAsync(Id);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading dataset: {ex.Message}");
+        }
+
+        if (currentDataset != null)
+        {
+            DatasetViewTracker.IncrementView(Id);
+            try
+            {
+                await LoadHeaders();
+                await LoadFileInfo();
+
+                if (headers != null && headers.Any() && string.IsNullOrEmpty(selectedTargetColumn))
+                {
+                    selectedTargetColumn = headers.Last();
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error loading dataset headers/files: {ex.Message}");
+            }
+
+            try
+            {
+                // Veritabanında kayıtlı analiz varsa yükle
+                var existingAnalysis = await DatasetRepository.GetAnalysisByDatasetIdAsync(Id);
+                if (existingAnalysis != null)
+                {
+                    MapExistingAnalysis(existingAnalysis);
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error loading existing analysis: {ex.Message}");
+            }
+
+            try
+            {
+                // Akademik atıfları yükle
+                datasetPapers = await DatasetRepository.GetPapersByDatasetIdAsync(Id);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error loading academic papers: {ex.Message}");
+                datasetPapers = new List<DatasetPaper>();
+            }
+        }
+        isLoading = false;
+    }
+
+    private void MapExistingAnalysis(DatasetAnalysis existing)
+    {
+        try 
+        {
+            pythonResult = new AnalysisResult
+            {
+                instances = existing.Instances,
+                features = existing.Features,
+                task_type = existing.TaskType,
+                performance = !string.IsNullOrEmpty(existing.PerformanceJson) 
+                    ? JsonSerializer.Deserialize<List<ModelPerformance>>(existing.PerformanceJson)! : new(),
+                variables = !string.IsNullOrEmpty(existing.VariablesJson)
+                    ? JsonSerializer.Deserialize<List<VariableInfo>>(existing.VariablesJson)! : new(),
+                charts = !string.IsNullOrEmpty(existing.ChartsJson)
+                    ? JsonSerializer.Deserialize<Dictionary<string, string>>(existing.ChartsJson)! : new()
+            };
+
+            if (pythonResult.variables.Any())
+            {
+                headers = pythonResult.variables.Select(v => v.name).ToList();
+                excludedColumns.Clear();
+                foreach (var v in pythonResult.variables)
+                {
+                    if (v.role == "Target")
+                    {
+                        selectedTargetColumn = v.name;
+                    }
+                    else if (v.role == "Excluded")
+                    {
+                        excludedColumns.Add(v.name);
+                    }
+                }
+            }
+        }
+        catch (Exception ex) { Console.WriteLine($"Deserialization Error: {ex.Message}"); }
+    }
+
+    private async Task StartAnalysis()
+    {
+        isAnalyzing = true;
+        StateHasChanged();
+
+        try
+        {
+            var filePath = Path.Combine(HostEnvironment.WebRootPath, "uploads", currentDataset!.FileName);
+            var scriptPath = Path.Combine(HostEnvironment.WebRootPath, "scripts", "analyzer.py");
+
+            var start = new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = "python",
+                Arguments = $"\"{scriptPath}\" \"{filePath}\" \"{selectedTargetColumn}\" \"{string.Join(",", excludedColumns)}\"",
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                CreateNoWindow = true
+            };
+
+            using var process = System.Diagnostics.Process.Start(start);
+            if (process != null)
+            {
+                using var reader = process.StandardOutput;
+                string jsonOutput = await reader.ReadToEndAsync();
+                pythonResult = JsonSerializer.Deserialize<AnalysisResult>(jsonOutput);
+
+                if (pythonResult != null)
+                {
+                    var newAnalysis = new DatasetAnalysis
+                    {
+                        DatasetId = Id,
+                        TaskType = pythonResult.task_type,
+                        Instances = pythonResult.instances,
+                        Features = pythonResult.features,
+                        PerformanceJson = JsonSerializer.Serialize(pythonResult.performance),
+                        VariablesJson = JsonSerializer.Serialize(pythonResult.variables),
+                        ChartsJson = JsonSerializer.Serialize(pythonResult.charts),
+                        AnalysisDate = DateTime.Now
+                    };
+                    await DatasetRepository.SaveAnalysisAsync(newAnalysis);
+                }
+            }
+        }
+        catch (Exception ex) { Console.WriteLine($"Analysis Error: {ex.Message}"); }
+        finally
+        {
+            isAnalyzing = false;
+            StateHasChanged();
+        }
+    }
+
+    private string FormatFileSize(long bytes)
+    {
+        string[] suffixes = { "Bytes", "KB", "MB", "GB" };
+        int counter = 0;
+        decimal number = (decimal)bytes;
+        while (Math.Round(number / 1024) >= 1 && counter < suffixes.Length - 1)
+        {
+            number /= 1024;
+            counter++;
+        }
+        return string.Format("{0:n1} {1}", number, suffixes[counter]);
+    }
+
+    private string FormatSubjectArea(string? subjectArea)
+    {
+        if (string.IsNullOrEmpty(subjectArea)) return "Awaiting Analysis";
+        if (subjectArea.Equals("Classification", StringComparison.OrdinalIgnoreCase)) return "Classification";
+        if (subjectArea.Equals("Regression", StringComparison.OrdinalIgnoreCase)) return "Regression";
+        if (subjectArea.Equals("Yazılım/Teknoloji", StringComparison.OrdinalIgnoreCase)) return "Awaiting Analysis";
+        if (subjectArea.Equals("Software/Technology", StringComparison.OrdinalIgnoreCase)) return "Awaiting Analysis";
+        if (subjectArea.Equals("Error", StringComparison.OrdinalIgnoreCase) || subjectArea.Contains("Error", StringComparison.OrdinalIgnoreCase)) return "Analysis Error";
+        return subjectArea;
+    }
+
+    private async Task DownloadDataset()
+    {
+        if (currentDataset != null)
+        {
+            var fileUrl = $"uploads/{currentDataset.FileName}";
+            await JSRuntime.InvokeVoidAsync("downloadFileFromUrl", currentDataset.FileName, fileUrl);
+        }
+    }
+
+    private async Task LoadHeaders()
+    {
+        try {
+            var path = Path.Combine(HostEnvironment.WebRootPath, "uploads", currentDataset!.FileName);
+            if (File.Exists(path)) {
+                if (path.EndsWith(".xlsx", StringComparison.OrdinalIgnoreCase) || path.EndsWith(".xls", StringComparison.OrdinalIgnoreCase))
+                {
+                    var start = new System.Diagnostics.ProcessStartInfo
+                    {
+                        FileName = "python",
+                        Arguments = $"-c \"import pandas as pd; df = pd.read_excel(r'{path}', nrows=1); print(','.join(df.columns))\"",
+                        UseShellExecute = false,
+                        RedirectStandardOutput = true,
+                        CreateNoWindow = true
+                    };
+                    using var process = System.Diagnostics.Process.Start(start);
+                    if (process != null)
+                    {
+                        using var reader = process.StandardOutput;
+                        string output = await reader.ReadToEndAsync();
+                        if (!string.IsNullOrWhiteSpace(output))
+                        {
+                            headers = output.Trim().Split(',').Select(h => h.Trim()).ToList();
+                        }
+                    }
+                }
+                else
+                {
+                    var lines = await File.ReadLinesAsync(path).Take(1).ToListAsync();
+                    if (lines.Any()) {
+                        headers = lines.First().Split(',').Select(h => h.Trim().Replace("\"", "")).ToList();
+                    }
+                }
+            }
+        } catch { }
+    }
+
+    private async Task LoadFileInfo()
+    {
+        try {
+            var path = Path.Combine(HostEnvironment.WebRootPath, "uploads", currentDataset!.FileName);
+            if (File.Exists(path)) fileSize = new FileInfo(path).Length;
+        } catch { }
+    }
+
+    // --- EXCLUDE / TARGET STATE ---
+    private List<string> excludedColumns = new();
+    private string _selectedTargetColumn = "";
+    private string selectedTargetColumn
+    {
+        get => _selectedTargetColumn;
+        set
+        {
+            _selectedTargetColumn = value;
+            if (excludedColumns.Contains(value))
+            {
+                excludedColumns.Remove(value);
+            }
+        }
+    }
+
+    private string GetColumnRole(string columnName)
+    {
+        if (columnName == selectedTargetColumn)
+        {
+            return "Target";
+        }
+        else if (excludedColumns.Contains(columnName))
+        {
+            return "Excluded";
+        }
+        else
+        {
+            return "Feature";
+        }
+    }
+
+    private void OnExcludeCheckboxChanged(string columnName, ChangeEventArgs e)
+    {
+        bool isChecked = (bool)(e.Value ?? false);
+        if (isChecked)
+        {
+            if (!excludedColumns.Contains(columnName))
+            {
+                excludedColumns.Add(columnName);
+            }
+        }
+        else
+        {
+            if (excludedColumns.Contains(columnName))
+            {
+                excludedColumns.Remove(columnName);
+            }
+        }
+    }
+
+    // --- MODELLER ---
+    public class AnalysisResult {
+        public int instances { get; set; }
+        public int features { get; set; }
+        public string task_type { get; set; } = "";
+        public string? error { get; set; }
+        public List<ModelPerformance> performance { get; set; } = new();
+        public List<VariableInfo> variables { get; set; } = new();
+        public Dictionary<string, string> charts { get; set; } = new();
+    }
+    public class ModelPerformance {
+        public string model_name { get; set; } = "";
+        public double score { get; set; }
+    }
+    public class VariableInfo {
+        public string name { get; set; } = "";
+        public string role { get; set; } = "";
+        public string type { get; set; } = "";
+        public string missing { get; set; } = "";
+    }
+}

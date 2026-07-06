@@ -1,0 +1,198 @@
+@inherits LayoutComponentBase
+@using Microsoft.AspNetCore.Components.Authorization
+@inject NavigationManager Navigation
+@inject AuthenticationStateProvider AuthStateProvider
+
+<div class="app-shell">
+    @* SOL MENÜ KAPSAYICI *@
+    <aside class="sidebar-wrapper">
+        <NavMenu OnLogoutRequested="HandleLogoutRequested" />
+    </aside>
+
+    <main class="main-body">
+        @* ÜST MENÜ: YENİLENMİŞ HİYERARŞİ *@
+        <header class="top-bar-modern">
+            <div class="page-breadcrumb">
+                <div class="brand-tag">KBU</div>
+                <i class="bi bi-chevron-right breadcrumb-sep"></i>
+                <span class="active-page-name">Home</span>
+            </div>
+
+            <div class="header-actions">
+                <AuthorizeView>
+                    <Authorized Context="auth">
+                        <div class="user-profile-pill">
+                            <div class="avatar-status">
+                                <div class="status-pulse"></div>
+                            </div>
+                            <div class="user-info-text">
+                                <span class="u-greet">WELCOME</span>
+                                <span class="u-name">@auth.User.Identity?.Name</span>
+                            </div>
+                        </div>
+                    </Authorized>
+                </AuthorizeView>
+
+                <div class="action-stack">
+                    <a href="https://www.karabuk.edu.tr" target="_blank" class="circle-action-btn" title="University Web Site">
+                        <i class="bi bi-browser-chrome"></i>
+                    </a>
+
+                    <button class="circle-action-btn logout-variant" @onclick="HandleLogoutRequested" title="Logout Safely">
+                        <i class="bi bi-power"></i>
+                    </button>
+                </div>
+            </div>
+        </header>
+
+        @* ANA İÇERİK ALANI *@
+        <section class="main-viewport">
+            <div class="content-container">
+                @Body
+            </div>
+        </section>
+    </main>
+</div>
+
+@* MODERN ÇIKIŞ ONAYI *@
+@if (showLogoutModal)
+{
+    <div class="glass-modal-overlay">
+        <div class="confirm-dialog animate-bounce-in">
+            <div class="dialog-header-danger">
+                <i class="bi bi-door-open-fill"></i>
+            </div>
+            <h3>Logout</h3>
+            <p>Are you sure you want to sign out? Any unsaved changes might be lost.</p>
+            <div class="dialog-buttons">
+                <button class="btn-cancel-flat" @onclick="() => showLogoutModal = false">Cancel</button>
+                <button class="btn-confirm-danger" @onclick="ConfirmLogout">Logout</button>
+            </div>
+        </div>
+    </div>
+}
+
+<style>
+    :root {
+        --nav-dark: #0f172a;
+        --accent-blue: #4f46e5;
+        --bg-main: #f1f5f9;
+        --border-ui: rgba(255, 255, 255, 0.1);
+        --text-base: #1e293b;
+        --text-dim: #64748b;
+    }
+
+    .app-shell {
+        display: flex;
+        width: 100vw;
+        height: 100vh;
+        background-color: var(--bg-main);
+        overflow: hidden;
+    }
+
+    .sidebar-wrapper {
+        width: 280px;
+        background-color: var(--nav-dark);
+        border-right: 1px solid var(--border-ui);
+        z-index: 100;
+    }
+
+    .main-body {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        min-width: 0;
+    }
+
+    /* ÜST MENÜ TASARIMI */
+    .top-bar-modern {
+        height: 80px;
+        background-color: var(--nav-dark);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 40px;
+        border-bottom: 1px solid var(--border-ui);
+        box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+    }
+
+    .page-breadcrumb { display: flex; align-items: center; gap: 12px; }
+    .brand-tag { 
+        background: var(--accent-blue); color: white; 
+        padding: 4px 10px; border-radius: 6px; 
+        font-weight: 800; font-size: 0.75rem; 
+    }
+    .breadcrumb-sep { color: var(--text-dim); font-size: 0.8rem; }
+    .active-page-name { color: white; font-weight: 700; font-size: 1.1rem; }
+
+    .header-actions { display: flex; align-items: center; gap: 30px; }
+
+    .user-profile-pill {
+        display: flex; align-items: center; gap: 15px;
+        background: rgba(255,255,255,0.03);
+        padding: 8px 20px; border-radius: 100px;
+        border: 1px solid var(--border-ui);
+    }
+
+    .status-pulse {
+        width: 10px; height: 10px; background: #10b981;
+        border-radius: 50%; box-shadow: 0 0 10px #10b981;
+        animation: pulse 2s infinite;
+    }
+
+    .user-info-text { display: flex; flex-direction: column; }
+    .u-greet { color: var(--text-dim); font-size: 0.6rem; font-weight: 800; letter-spacing: 1px; }
+    .u-name { color: #f8fafc; font-size: 0.9rem; font-weight: 700; }
+
+    .action-stack { display: flex; gap: 12px; }
+    .circle-action-btn {
+        width: 42px; height: 42px; border-radius: 50%;
+        background: rgba(255,255,255,0.05); color: #94a3b8;
+        display: flex; align-items: center; justify-content: center;
+        text-decoration: none; border: none; transition: 0.3s;
+    }
+    .circle-action-btn:hover { background: var(--accent-blue); color: white; transform: translateY(-2px); }
+    .logout-variant:hover { background: #ef4444; box-shadow: 0 0 15px rgba(239, 68, 68, 0.4); }
+
+    /* İÇERİK ALANI */
+    .main-viewport {
+        flex: 1;
+        overflow-y: auto;
+        padding: 40px;
+    }
+    .content-container { max-width: 1400px; margin: 0 auto; }
+
+    /* MODAL */
+    .glass-modal-overlay {
+        position: fixed; inset: 0; background: rgba(15, 23, 42, 0.8);
+        backdrop-filter: blur(8px); display: flex; align-items: center;
+        justify-content: center; z-index: 1000;
+    }
+    .confirm-dialog {
+        background: white; padding: 40px; border-radius: 28px;
+        width: 420px; text-align: center; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+    }
+    .dialog-header-danger { font-size: 3.5rem; color: #ef4444; margin-bottom: 20px; }
+    .confirm-dialog h3 { font-weight: 800; color: #0f172a; }
+    .confirm-dialog p { color: #64748b; margin: 15px 0 30px; }
+
+    .dialog-buttons { display: flex; gap: 15px; }
+    .btn-confirm-danger {
+        flex: 1; background: #ef4444; color: white; border: none;
+        padding: 14px; border-radius: 12px; font-weight: 700; transition: 0.2s;
+    }
+    .btn-cancel-flat {
+        flex: 1; background: #f1f5f9; color: #475569; border: none;
+        padding: 14px; border-radius: 12px; font-weight: 700;
+    }
+
+    @@keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.4; } 100% { opacity: 1; } }
+    .animate-bounce-in { animation: bounceIn 0.5s cubic-bezier(0.68, -0.55, 0.265, 1.55); }
+    @@keyframes bounceIn { from { transform: scale(0.8); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+</style>
+
+@code {
+    private bool showLogoutModal = false;
+    private void HandleLogoutRequested() { showLogoutModal = true; StateHasChanged(); }
+    private async Task ConfirmLogout() { showLogoutModal = false; Navigation.NavigateTo("/login", true); }
+}

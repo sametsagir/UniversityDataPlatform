@@ -1,0 +1,326 @@
+@page "/login"
+@page "/" 
+@layout EmptyLayout
+@using UniversityDataPlatform.Services
+@using UniversityDataPlatform.Models
+@inject AuthService authService
+@inject NavigationManager Navigation
+
+<div class="auth-wrapper">
+    <div class="auth-container">
+        
+        @* SOL TARAF: KURUMSAL VİZYON PANELİ *@
+        <div class="dark-panel">
+            <div class="panel-overlay"></div>
+            <div class="panel-content">
+                <div class="brand-logo">
+                    <i class="bi bi-hexagon-half"></i>
+                </div>
+                <h1 class="brand-title">ACADEMIC <br/><span>DATA CENTER</span></h1>
+                <p class="brand-tagline">A centralized platform developed for the standardization of university datasets and autonomous machine learning processes.</p>
+                
+                <div class="feature-list">
+                    <div class="f-item"><i class="bi bi-cpu"></i> <span>Autonomous Model Selection (AutoML)</span></div>
+                    <div class="f-item"><i class="bi bi-bar-chart-steps"></i> <span>Comprehensive Statistical Metrics</span></div>
+                    <div class="f-item"><i class="bi bi-shield-lock"></i> <span>End-to-End Data Security</span></div>
+                </div>
+            </div>
+            <div class="panel-footer">
+                <span>Karabuk University • 2026</span>
+            </div>
+        </div>
+
+        @* SAĞ TARAF: YÖNETİM PANELİ GİRİŞİ *@
+        <div class="light-panel">
+            <div class="form-wrapper">
+                <div class="form-header">
+                    <h2>Authorized Login</h2>
+                    <p>System authentication is required to access the management panel.</p>
+                </div>
+
+                <div class="form-body mt-8">
+                    @* E-POSTA ALANI *@
+                    <div class="input-group-custom mb-4">
+                        <label>INSTITUTIONAL EMAIL</label>
+                        <div class="input-field">
+                            <i class="bi bi-envelope-fill"></i>
+                            <input type="email" placeholder="samet@karabuk.edu.tr" @bind="loginEmail" class="large-input-text" />
+                        </div>
+                    </div>
+
+                    @* ŞİFRE ALANI *@
+                    <div class="input-group-custom mb-10">
+                        <label>SYSTEM PASSWORD</label>
+                        <div class="input-field">
+                            <i class="bi bi-lock-fill"></i>
+                            <input type="password" placeholder="••••••••" @bind="loginPassword" class="large-input-text" />
+                        </div>
+                    </div>
+
+                    @if (!string.IsNullOrEmpty(errorMessage))
+                    {
+                        <div class="error-msg mb-4" style="color: #ef4444; font-size: 0.85rem; font-weight: 600;">
+                            <i class="bi bi-exclamation-triangle-fill"></i> @errorMessage
+                        </div>
+                    }
+
+                    <button class="btn-login" @onclick="HandleLogin">
+                        SIGN IN TO SYSTEM <i class="bi bi-arrow-right-short fs-4"></i>
+                    </button>
+
+                    @* DIVIDER AND GUEST BUTTON *@
+                    <div class="divider">
+                        <span>OR</span>
+                    </div>
+
+                    <div class="text-center">
+                        <button class="guest-link-btn" @onclick="HandleGuestLogin">
+                            <i class="bi bi-person-badge-fill me-2"></i> Continue as Guest
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </div>
+</div>
+
+<style>
+    :root {
+        --dark-bg: #0f172a; 
+        --accent: #3b82f6; 
+        --light-bg: #ffffff;
+        --input-focus: #3b82f6;
+    }
+
+    .auth-wrapper {
+        background-color: #e2e8f0;
+        background-image: 
+            radial-gradient(at 0% 0%, hsla(225,39%,30%,1) 0, transparent 50%), 
+            radial-gradient(at 50% 0%, hsla(225,39%,20%,1) 0, transparent 50%), 
+            radial-gradient(at 100% 0%, hsla(225,39%,30%,1) 0, transparent 50%);
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 20px;
+        font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    }
+
+    .auth-container {
+        display: flex;
+        width: 100%;
+        max-width: 1050px;
+        min-height: 680px;
+        background: var(--light-bg);
+        border-radius: 24px;
+        overflow: hidden;
+        box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.4);
+    }
+
+    .dark-panel {
+        flex: 1.2;
+        background: var(--dark-bg);
+        padding: 60px;
+        color: white;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        position: relative;
+    }
+
+    .panel-overlay {
+        position: absolute;
+        top: 0; left: 0; width: 100%; height: 100%;
+        background: url('https://www.transparenttextures.com/patterns/carbon-fibre.png');
+        opacity: 0.1;
+    }
+
+    .panel-content { position: relative; z-index: 2; }
+    .brand-logo { font-size: 2.8rem; color: var(--accent); margin-bottom: 24px; }
+    .brand-title { font-size: 3.2rem; font-weight: 900; line-height: 1.1; letter-spacing: -1.5px; }
+    .brand-title span { color: var(--accent); }
+    .brand-tagline { font-size: 1.15rem; color: #94a3b8; margin-top: 24px; line-height: 1.6; font-weight: 400; }
+
+    .feature-list { margin-top: 60px; }
+    .f-item { display: flex; align-items: center; gap: 14px; margin-bottom: 18px; font-weight: 500; color: #cbd5e1; font-size: 1.05rem; }
+    .f-item i { color: var(--accent); font-size: 1.2rem; }
+
+    .panel-footer { position: relative; z-index: 2; font-size: 0.85rem; color: #475569; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; }
+
+    .light-panel {
+        flex: 1;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 60px 40px;
+        background: #fff;
+    }
+
+    .form-wrapper { width: 100%; max-width: 360px; }
+    .form-header h2 { font-weight: 900; color: var(--dark-bg); font-size: 2rem; letter-spacing: -0.8px; margin-bottom: 8px; }
+    .form-header p { color: #64748b; font-size: 0.95rem; line-height: 1.4; }
+
+    .input-group-custom label { 
+        display: block; 
+        font-size: 0.75rem; 
+        font-weight: 800; 
+        color: #475569; 
+        margin-bottom: 10px; 
+        text-transform: uppercase; 
+        letter-spacing: 0.8px;
+    }
+
+    .input-field { position: relative; }
+    .input-field i { 
+        position: absolute; 
+        left: 18px; 
+        top: 50%; 
+        transform: translateY(-50%); 
+        color: #94a3b8; 
+        z-index: 5; 
+        font-size: 1.2rem;
+        transition: 0.2s ease;
+    }
+    
+    .input-field input {
+        width: 100%;
+        height: 56px;
+        padding: 0 16px 0 54px;
+        background: #f8fafc;
+        border: 2px solid #e2e8f0;
+        border-radius: 14px;
+        transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        color: #1e293b;
+    }
+
+    .large-input-text { font-size: 1.05rem !important; font-weight: 600; }
+
+    .input-field input:focus { 
+        outline: none; 
+        border-color: var(--accent); 
+        background: white; 
+        box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.12);
+    }
+
+    .btn-login {
+        width: 100%;
+        height: 60px;
+        background: var(--dark-bg);
+        color: white;
+        border: none;
+        border-radius: 14px;
+        font-weight: 800;
+        font-size: 1.05rem;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
+        transition: all 0.3s ease;
+        cursor: pointer;
+        letter-spacing: 0.5px;
+    }
+
+    .btn-login:hover { 
+        background: #000; 
+        transform: translateY(-3px); 
+        box-shadow: 0 12px 20px -5px rgba(0,0,0,0.25); 
+    }
+
+    .divider {
+        display: flex;
+        align-items: center;
+        text-align: center;
+        margin: 30px 0;
+        color: #cbd5e1;
+    }
+
+    .divider::before, .divider::after {
+        content: '';
+        flex: 1;
+        border-bottom: 1px solid #e2e8f0;
+    }
+
+    .divider span {
+        padding: 0 15px;
+        font-size: 0.7rem;
+        font-weight: 800;
+        letter-spacing: 1px;
+        color: #94a3b8;
+    }
+
+    .guest-link-btn {
+        background: transparent;
+        border: none;
+        color: #64748b;
+        font-size: 0.95rem;
+        font-weight: 600;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 10px 20px;
+        border-radius: 12px;
+        transition: all 0.2s;
+        cursor: pointer;
+    }
+
+    .guest-link-btn:hover {
+        color: var(--accent);
+        background: #f1f5f9;
+    }
+
+    .mb-10 { margin-bottom: 2.5rem !important; }
+
+    @@media (max-width: 950px) {
+        .dark-panel { display: none; }
+        .auth-container { max-width: 450px; border-radius: 20px; }
+    }
+</style>
+
+@code {
+    private string loginEmail = "";
+    private string loginPassword = "";
+    private string? errorMessage;
+
+    private async Task HandleLogin() 
+    {
+        errorMessage = null;
+
+        if (string.IsNullOrWhiteSpace(loginEmail) || string.IsNullOrWhiteSpace(loginPassword))
+        {
+            errorMessage = "Please fill in both email and password fields.";
+            return;
+        }
+
+        try 
+        {
+            // Database-controlled login via AuthService
+            var user = await authService.LoginAsync(loginEmail, loginPassword);
+
+            if (user != null)
+            {
+                // Delay slightly for auth state propagation before redirecting
+                await Task.Delay(100);
+                Navigation.NavigateTo("/dashboard", forceLoad: true);
+            }
+            else
+            {
+                errorMessage = "Invalid login credentials or insufficient permissions.";
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = "A system connection error occurred.";
+            Console.WriteLine($"Login Error: {ex.Message}");
+        }
+    }
+
+    private async Task HandleGuestLogin()
+    {
+        // CRITICAL: Clear old session data (like Admin) when logging in as a guest.
+        await authService.LogoutAsync();
+        
+        // Force refresh to dashboard so the sidebar reloads cleanly as 'Visitor'.
+        Navigation.NavigateTo("/dashboard", forceLoad: true);
+    }
+}
